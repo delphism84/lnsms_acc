@@ -1,0 +1,29 @@
+## OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+## Node
+**/node_modules/
+**/dist/
+**/.vite/
+**/.turbo/
+**/.parcel-cache/
+
+## .NET
+**/bin/
+**/obj/
+
+## Logs
+*.log
+
+## Build artifacts / installers
+**/installer/*.exe
+**/installer/*.zip
+*.msi
+
+## Cursor / tooling
+.cursor/
