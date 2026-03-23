@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { getBackendUrl } from '../services/phrases';
 import { getApiBaseUrl } from '../services/api';
+import { showCustomAlert } from './CustomAlert';
+import { showCustomPrompt } from './CustomPrompt';
 import '../styles/NotificationView.css';
 
 interface NotificationViewProps {
@@ -11,17 +13,37 @@ interface UidNotification {
   uid: string;
   message: string;
   color: string;
+  autoCloseEnabled?: boolean;
+  autoCloseSeconds?: number;
+  imageUrl?: string | null;
 }
 
 function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
-  // BE가 관리하는 uid 맵을 그대로 표시
+  // BE가 관리하는 uid 맵을 그대로 표시 (현재 1건 + 대기 건수)
   const [activeNotifications, setActiveNotifications] = useState<UidNotification[]>([]);
+  const [queueLength, setQueueLength] = useState(0);
   const lastTtsUidsRef = useRef<Set<string>>(new Set());
+  const autoCloseTimerRef = useRef<number | null>(null);
+  const [notificationTitle, setNotificationTitle] = useState('장애인 도움 요청');
 
   useEffect(() => {
     const connectSignalR = async () => {
       try {
         const backendUrl = await getBackendUrl();
+        const apiUrl = await getApiBaseUrl();
+
+        // 런타임 타이틀(알림 화면 타이틀)
+        try {
+          const r = await fetch(`${apiUrl}/api/settings/app`, { signal: AbortSignal.timeout(1000) });
+          if (r.ok) {
+            const cfg = await r.json();
+            if (cfg?.notificationTitle) {
+              setNotificationTitle(String(cfg.notificationTitle));
+            }
+          }
+        } catch {
+          // ignore
+        }
 
         // SignalR 연결 (간단한 폴링 방식으로 구현)
         // 실제 SignalR 라이브러리 사용 시 @microsoft/signalr 패키지 필요
@@ -36,7 +58,11 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
                   uid: String(n.uid),
                   message: String(n.message ?? ''),
                   color: String(n.color ?? '#FFFFFF'),
+                  autoCloseEnabled: Boolean(n.autoCloseEnabled),
+                  autoCloseSeconds: Number(n.autoCloseSeconds ?? 10),
+                  imageUrl: n.imageUrl == null ? null : String(n.imageUrl),
                 }));
+              setQueueLength(Number(data?.queueLength ?? 0));
 
               // 신규 uid에 대해서만 1회 TTS (중복 재생 방지)
               list.forEach(n => {
@@ -80,6 +106,30 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
     };
   }, []);
 
+  // 자동 꺼짐 타이머: "현재 1개"가 있을 때만 동작
+  useEffect(() => {
+    if (autoCloseTimerRef.current) {
+      window.clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+
+    if (!activeNotifications || activeNotifications.length === 0) return;
+
+    const current = activeNotifications[0];
+    if (!current?.autoCloseEnabled) return;
+    const ms = Math.max(1, Number(current?.autoCloseSeconds ?? 10)) * 1000;
+    autoCloseTimerRef.current = window.setTimeout(() => {
+      handleConfirm(current.uid);
+    }, ms);
+
+    return () => {
+      if (autoCloseTimerRef.current) {
+        window.clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = null;
+      }
+    };
+  }, [activeNotifications]);
+
   const playTTS = async (text: string) => {
     try {
       // TTS 활성화 상태 확인
@@ -105,50 +155,68 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
     }
   };
 
-  const handleConfirm = async () => {
-    // 확인 -> BE 맵에서 제거 (기본: 전체 clear)
+  const handleConfirm = async (uid?: string) => {
+    const backendUrl = await getBackendUrl();
+    const apiUrl = await getApiBaseUrl();
+
     try {
-      const backendUrl = await getBackendUrl();
       await fetch(`${backendUrl}/api/notifications/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(uid ? { uid, hideWindow: false } : { hideWindow: false }),
       });
     } catch (error) {
       console.error('알림 확인(서버) 실패:', error);
+      return;
     }
 
-    // 창 닫기 (무조건 실행)
     try {
-      const apiUrl = await getApiBaseUrl();
+      const response = await fetch(`${backendUrl}/api/notifications/active`);
+      if (response.ok) {
+        const data = await response.json();
+        const list = data?.notifications ?? [];
+        if (!list || list.length === 0) {
+          await fetch(`${apiUrl}/api/window/hide`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    } catch (error) {
+      console.error('창 닫기 판단 실패:', error);
+    }
+  };
+
+  const handleConfirmAll = async () => {
+    const backendUrl = await getBackendUrl();
+    const apiUrl = await getApiBaseUrl();
+    try {
+      await fetch(`${backendUrl}/api/notifications/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearAll: true, hideWindow: true }),
+      });
       await fetch(`${apiUrl}/api/window/hide`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
-      console.error('창 닫기 실패:', error);
+      console.error('일괄 확인 실패:', error);
     }
   };
 
   const handleSettingsClick = async () => {
-    // 설정으로 이동해도 확인 버튼과 동일하게 알림을 클리어
-    try {
-      const backendUrl = await getBackendUrl();
-      await fetch(`${backendUrl}/api/notifications/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // 알림은 지우되 창은 숨기지 않음(설정 화면으로 전환해야 함)
-        body: JSON.stringify({ hideWindow: false }),
-      });
-    } catch (error) {
-      console.error('설정 클릭 알림 클리어 실패:', error);
+    const pw = await showCustomPrompt({
+      title: '설정',
+      message: '비밀번호를 입력하세요',
+      placeholder: '비밀번호',
+      password: true,
+    });
+    if (pw === null) return;
+    if (String(pw).trim() !== '8206') {
+      await showCustomAlert('비밀번호가 올바르지 않습니다.');
+      return;
     }
-
-    // FE 화면도 즉시 비우기
-    setActiveNotifications([]);
-    lastTtsUidsRef.current.clear();
 
     onNavigateToSettings();
   };
@@ -157,16 +225,26 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
     <div className="notification-view">
       {/* 중앙 콘텐츠 영역 */}
       <div className="notification-content-area">
-        {/* 상단 타이틀 */}
+        {/* 상단 타이틀 + 큐 건수 */}
         <div className="notification-header">
-          <h1 className="notification-title">장애인 도움 요청</h1>
+          <h1 className="notification-title">{notificationTitle}</h1>
+          {queueLength > 0 && (
+            <span className="notification-queue-badge">{queueLength}건 대기</span>
+          )}
         </div>
 
         {/* 콘텐츠 본문 */}
         <div className="notification-content-body">
           {/* 좌측 장애인 이미지 */}
           <div className="notification-image-container">
-            <img src="/acc.png" alt="장애인" className="notification-image" />
+            {activeNotifications.length > 0 ? (
+              <img
+                // 문구에 등록된 이미지가 최우선
+                src={(activeNotifications[0]?.imageUrl || '/acc.png') as string}
+                alt="알림 이미지"
+                className="notification-image"
+              />
+            ) : null}
           </div>
 
           {/* 우측 문구 텍스트 */}
@@ -174,26 +252,22 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
             <div className="notification-message-text">
               {(() => {
                 if (activeNotifications.length > 0) {
-                  return activeNotifications.map((item, index) => {
-                    return (
-                      <div key={index} style={{ marginBottom: index < activeNotifications.length - 1 ? '16px' : '0' }}>
-                        <div
-                          style={{ 
-                            color: item.color || '#FFFFFF',
-                            whiteSpace: 'pre-line'
-                          }}
-                        >
-                          {item.message?.trim() ? item.message : '(문구 미입력)'}
-                        </div>
-                      </div>
-                    );
-                  });
-                } else {
-                  return (
-                    <div style={{ color: '#FFFFFF' }}>
-                      도움이 필요합니다
+                const item = activeNotifications[0];
+                return (
+                  <div style={{ marginBottom: 0 }}>
+                    <div
+                      style={{
+                        color: item.color || '#FFFFFF',
+                        whiteSpace: 'pre-line'
+                      }}
+                    >
+                      {item.message?.trim() ? item.message : ''}
                     </div>
-                  );
+                  </div>
+                );
+                } else {
+                  // 기본(알림 없음) 화면: 이미지/글씨 없이 빈 상태
+                  return null;
                 }
               })()}
             </div>
@@ -205,10 +279,19 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
       <div className="notification-bottom-controls">
         <button 
           className="notification-confirm-button"
-          onClick={handleConfirm}
+          onClick={() => handleConfirm(activeNotifications[0]?.uid)}
+          disabled={!activeNotifications[0]?.uid}
         >
           확인
         </button>
+        {(queueLength > 0 || activeNotifications.length > 0) && (
+          <button 
+            className="notification-confirm-all-button"
+            onClick={handleConfirmAll}
+          >
+            일괄 확인
+          </button>
+        )}
         <button 
           className="notification-settings-icon"
           onClick={handleSettingsClick}

@@ -29,8 +29,9 @@ namespace CareReceiverAgent.Host.Services
                 // 콘솔 출력 인코딩 설정 (UTF-8)
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-                // 기본 문구 초기화 (서비스 시작 시 한 번만 실행, LoadPhrases에서도 자동 복구됨)
+                // 기본 문구 초기화 + QA 시드(필백)
                 JsonDatabaseService.LoadPhrases();
+                QaSeedService.EnsureQaSeedIfNeeded();
 
                 // 웹서버 시작
                 StartWebServer();
@@ -88,15 +89,16 @@ namespace CareReceiverAgent.Host.Services
                     // Windows 서비스로 실행
                     builder.Host.UseWindowsService();
 
-                    builder.WebHost.UseUrls($"http://localhost:{_port}");
-                    EventLog.WriteEntry($"백엔드 시작: http://localhost:{_port}", EventLogEntryType.Information);
+                    builder.WebHost.UseUrls($"http://0.0.0.0:{_port}");
+                    EventLog.WriteEntry($"백엔드 시작: http://localhost:{_port} (0.0.0.0:{_port})", EventLogEntryType.Information);
 
                     // 사용할 포트를 settings.json에 저장
                     PortService.SaveSettings(_port);
 
                     // 서비스 등록
-                    builder.Services.AddSingleton<SerialPortService>();
+                    builder.Services.AddSingleton<SerialPortManagerService>();
                     builder.Services.AddSingleton<NotificationService>();
+                    builder.Services.AddSingleton<NotificationQueueService>();
 
                     // 백그라운드 서비스
                     builder.Services.AddHostedService<SerialPortBackgroundService>();
@@ -150,6 +152,15 @@ namespace CareReceiverAgent.Host.Services
                     {
                         _webApp.UseStaticFiles();
                     }
+
+                    // 업로드 이미지 서빙: exe/data/phrase_images -> /media/*
+                    var mediaPath = PhraseImageStorage.BaseDir;
+                    PhraseImageStorage.EnsureDir();
+                    _webApp.UseStaticFiles(new StaticFileOptions
+                    {
+                        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(mediaPath),
+                        RequestPath = "/media"
+                    });
 
                     // Controllers
                     _webApp.MapControllers();

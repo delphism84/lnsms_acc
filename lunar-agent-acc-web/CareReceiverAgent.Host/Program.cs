@@ -15,6 +15,7 @@ static class Program
     private static int _port = 58000;
     private static Mutex? _mutex;
     private const string MutexName = "Global\\LunarAgentAccHost";
+    public static bool IsHeadless { get; private set; } = false;
 
     /// <summary>
     ///  The main entry point for the application.
@@ -22,6 +23,35 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Headless 모드: 웹서버만 실행 (자동화 테스트/CI 용)
+        if (args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase)))
+        {
+            IsHeadless = true;
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+            // 기본 문구 초기화 + QA 시드(필백)
+            JsonDatabaseService.LoadPhrases();
+            QaSeedService.EnsureQaSeedIfNeeded();
+
+            StartWebServer();
+            Console.WriteLine("Headless 모드로 실행 중입니다. 종료: Ctrl+C");
+
+            Console.CancelKeyPress += (s, e) =>
+            {
+                try
+                {
+                    StopWebServer();
+                }
+                finally
+                {
+                    Environment.Exit(0);
+                }
+            };
+
+            Thread.Sleep(Timeout.Infinite);
+            return;
+        }
+
         // 서비스 설치/삭제 모드 확인
         if (args.Length > 0)
         {
@@ -124,9 +154,10 @@ static class Program
             // 콘솔 출력 인코딩 설정 (UTF-8)
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             
-            // 기본 문구 초기화 (앱 시작 시 한 번만 실행, LoadPhrases에서도 자동 복구됨)
+            // 기본 문구 초기화 (앱 시작 시 한 번만 실행) + QA 시드(필백)
             JsonDatabaseService.LoadPhrases();
-            
+            QaSeedService.EnsureQaSeedIfNeeded();
+
             // 웹서버 시작
             StartWebServer();
 
@@ -169,15 +200,17 @@ static class Program
 
                 var builder = WebApplication.CreateBuilder();
 
-                builder.WebHost.UseUrls($"http://localhost:{_port}");
-                Console.WriteLine($"백엔드 시작: http://localhost:{_port}");
+                // 모든 인터페이스(외부 접속). 로컬은 localhost 동일 포트로 접근.
+                builder.WebHost.UseUrls($"http://0.0.0.0:{_port}");
+                Console.WriteLine($"백엔드 시작: http://localhost:{_port} (0.0.0.0:{_port})");
 
                 // 사용할 포트를 settings.json에 저장
                 PortService.SaveSettings(_port);
 
                 // 서비스 등록
-                builder.Services.AddSingleton<SerialPortService>();
+                builder.Services.AddSingleton<SerialPortManagerService>();
                 builder.Services.AddSingleton<NotificationService>();
+                builder.Services.AddSingleton<NotificationQueueService>();
 
                 // 백그라운드 서비스
                 builder.Services.AddHostedService<SerialPortBackgroundService>();
@@ -245,6 +278,15 @@ static class Program
                     Console.WriteLine($"경고: wwwroot 폴더를 찾을 수 없습니다: {wwwrootPath}");
                     _webApp.UseStaticFiles();
                 }
+
+                // 업로드 이미지 서빙: exe/data/phrase_images -> /media/*
+                var mediaPath = PhraseImageStorage.BaseDir;
+                PhraseImageStorage.EnsureDir();
+                _webApp.UseStaticFiles(new StaticFileOptions
+                {
+                    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(mediaPath),
+                    RequestPath = "/media",
+                });
 
                 // Controllers
                 _webApp.MapControllers();

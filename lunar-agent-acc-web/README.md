@@ -139,6 +139,73 @@ dotnet run
 
 호스트 애플리케이션은 내장된 웹서버를 자동으로 시작하고 WebView2로 프론트엔드를 로드합니다. 웹서버는 자동으로 사용 가능한 포트를 찾아 실행됩니다 (기본값: 58000).
 
+## 서버 가동 (Node LNSMS 백엔드 + Admin FE)
+
+원격 Linux/Windows 서버에서 **MongoDB + Node 백엔드 + Next.js Admin**만 띄우는 경우입니다. (에이전트 WinForms는 별도 PC용)
+
+### 1) 저장소 받기
+
+```bash
+git clone <저장소 URL>
+cd lunar-sms/lunar-agent-acc-web
+```
+
+### 2) Cursor에서 환경 파일 만들기 (커밋하지 않음)
+
+| 구분 | 파일 | 설명 |
+|------|------|------|
+| Node 백엔드 | `backend/.env` | `backend/.env.example` 복사 후 수정 |
+| Admin | `lnms-admin/.env.local` | `lnms-admin/.env.local.example` 복사 후 수정 |
+
+- `.env` / `.env.local` 은 **비밀·호스트 정보**가 들어가므로 Git에 올리지 마세요.
+- Cursor 터미널에서 `cp` / 복사 후 이름 변경으로 생성하면 됩니다.
+
+### 3) 백엔드 `backend/.env` 예시
+
+```env
+MONGO_URI=mongodb://user:password@호스트:27017/admin?serverSelectionTimeoutMS=7000
+DB_NAME=lnsms
+PORT=60000
+HOST=0.0.0.0
+```
+
+- `HOST=0.0.0.0` : 외부에서 API 접근 (방화벽에서 `PORT` 허용 필요)
+- `PORT` : Admin이 호출할 API 포트와 **반드시 동일**해야 합니다.
+
+### 4) Admin `lnms-admin/.env.local` 예시
+
+```env
+NEXT_PUBLIC_LNSMS_API=http://서버공인IP:60000
+```
+
+로컬에서만 테스트할 때는 `http://localhost:60000` 처럼 백엔드 `PORT`와 맞춥니다.
+
+### 5) 설치 및 실행
+
+```bash
+cd backend
+npm install
+npm run build   # 없으면 생략, package.json 기준 npm start
+npm start
+```
+
+다른 터미널:
+
+```bash
+cd lnms-admin
+npm install
+npm run build
+npm start
+```
+
+- 기본 바인딩: 백엔드·Admin 모두 **0.0.0.0** (스크립트·`package.json` 기준). Admin은 포트 **60001**, API는 **60000**을 쓰는 구성이 일반적입니다 (`run-node-admin.bat` 참고).
+
+### 6) 방화벽
+
+- MongoDB 포트(보통 27017)는 DB 서버만 열고, API 포트·Admin 포트만 운영망에 개방하는 것을 권장합니다.
+
+자세한 변수 설명은 [backend/README.md](backend/README.md), Admin 쪽은 [lnms-admin/README.md](lnms-admin/README.md)를 참고하세요.
+
 ## 배포
 
 ### Self-Contained 빌드

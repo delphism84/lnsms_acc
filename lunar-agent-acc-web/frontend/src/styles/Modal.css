@@ -25,6 +25,28 @@
   flex-direction: column;
 }
 
+/* 편집/설정 모달: 화면을 넓게 사용 */
+.modal-content.modal-content--wide {
+  width: calc(100vw - 48px);
+  height: calc(100vh - 48px);
+  max-width: 1400px;
+  max-height: calc(100vh - 48px);
+}
+
+@media (min-width: 1600px) {
+  .modal-content.modal-content--wide {
+    max-width: 1600px;
+  }
+}
+
+@media (max-width: 520px) {
+  .modal-content.modal-content--wide {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-width: none;
+  }
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -103,6 +125,7 @@
 }
 
 .form-group input[type="text"],
+.form-group input[type="password"],
 .form-group input[type="number"],
 .form-group select {
   width: 100%;
@@ -255,6 +278,42 @@
 .modal-actions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* .modal-actions 밖(시리얼 포트 툴바·하단 등)에서도 동일한 버튼 박스 스타일 */
+button.cancel-button,
+button.save-button,
+button.connect-button,
+button.disconnect-button,
+button.log-button {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  transition: background-color 0.2s, opacity 0.2s, box-shadow 0.2s;
+}
+
+button.cancel-button:disabled,
+button.save-button:disabled,
+button.connect-button:disabled,
+button.disconnect-button:disabled,
+button.log-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.save-button.primary {
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.35);
+}
+
+.save-button.primary:hover {
+  background-color: #0051d5;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
 }
 
 .cancel-button {

@@ -8,9 +8,25 @@ export interface Phrase {
   isEnabled: boolean;
   color: string;
   bellCodes: string[];
+  autoCloseEnabled?: boolean;
+  autoCloseSeconds?: number;
+  imageUrl?: string | null;
+  makerId?: string | null;
+  modelId?: string | null;
   createdAt: string;
   updatedAt: string;
   bellCount: number;
+}
+
+export interface CallBellMaker {
+  id: string;
+  name: string;
+  models: { id: string; name: string }[];
+}
+
+export async function getCallBellMakers(): Promise<CallBellMaker[]> {
+  const data = await apiRequest<CallBellMaker[]>('/api/callbell/makers');
+  return Array.isArray(data) ? data : [];
 }
 
 export interface PhraseDatabase {
@@ -26,6 +42,11 @@ function normalizePhrase(phrase: any): Phrase {
     isEnabled: phrase.isEnabled ?? phrase.IsEnabled ?? true,
     color: phrase.color || phrase.Color || '#000000',
     bellCodes: phrase.bellCodes || phrase.BellCodes || [],
+    autoCloseEnabled: phrase.autoCloseEnabled ?? phrase.AutoCloseEnabled ?? false,
+    autoCloseSeconds: phrase.autoCloseSeconds ?? phrase.AutoCloseSeconds ?? 10,
+    imageUrl: phrase.imageUrl ?? phrase.ImageUrl ?? null,
+    makerId: phrase.makerId ?? phrase.MakerId ?? null,
+    modelId: phrase.modelId ?? phrase.ModelId ?? null,
     createdAt: phrase.createdAt || phrase.CreatedAt || '',
     updatedAt: phrase.updatedAt || phrase.UpdatedAt || '',
     bellCount: phrase.bellCount ?? phrase.BellCount ?? 0

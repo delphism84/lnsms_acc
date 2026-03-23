@@ -13,6 +13,13 @@ namespace CareReceiverAgent.Host.Controllers
             var settings = PortService.LoadSettings();
             return Ok(new { port = settings.Port, backendUrl = settings.BackendUrl });
         }
+
+        [HttpGet("app")]
+        public ActionResult GetApp()
+        {
+            var cfg = AppRuntimeConfig.Load();
+            return Ok(new { title = cfg.Title, notificationTitle = cfg.NotificationTitle });
+        }
     }
 }
 

@@ -1,0 +1,20 @@
+{
+  "name": "lunar-agent-acc-backend",
+  "version": "1.0.0",
+  "description": "Node.js API for lunar-agent (phrases, serial settings) with MongoDB",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "qa-seed": "node scripts/qa-seed.js",
+    "qa:verify-admin": "node scripts/qa-verify-admin-api.js",
+    "qa:verify-admin-all": "node scripts/qa-verify-admin-all-apis.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "mongodb": "^6.11.0"
+  }
+}

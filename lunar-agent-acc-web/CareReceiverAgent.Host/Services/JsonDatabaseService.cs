@@ -14,6 +14,8 @@ namespace CareReceiverAgent.Host.Services
         private static string DataDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
         private static string PhrasesPath => Path.Combine(DataDir, "phrases.json");
         private static string SerialSettingsPath => Path.Combine(DataDir, "serial_settings.json");
+        private static string ActiveSetIdPath => Path.Combine(DataDir, "active_setid.json");
+        private static string RemoteControlPath => Path.Combine(DataDir, "remote_control.json");
         private static readonly object _loadLock = new object();
 
         static JsonDatabaseService()
@@ -36,36 +38,54 @@ namespace CareReceiverAgent.Host.Services
             };
         }
 
+        private static bool UseMongo(out string connectionString, out string databaseName)
+        {
+            var cfg = AppRuntimeConfig.Load();
+            connectionString = cfg.MongoConnectionString ?? string.Empty;
+            databaseName = cfg.MongoDatabaseName ?? "agent";
+            return !string.IsNullOrWhiteSpace(connectionString);
+        }
+
         /// <summary>
-        /// JSON 파일에서 문구 데이터를 읽어옴
-        /// assist 벨 코드가 없으면 자동으로 복구
+        /// 문구 데이터 로드. Mongo 연결 설정 시 MongoDB, 없으면 JSON 파일 사용. assist 벨 코드 없으면 자동 복구.
         /// </summary>
         public static PhraseDatabase LoadPhrases()
         {
             lock (_loadLock)
             {
-                PhraseDatabase db = new PhraseDatabase();
-                
-                try
+                PhraseDatabase db;
+                if (UseMongo(out var conn, out var dbName))
                 {
-                    if (File.Exists(PhrasesPath))
+                    try
                     {
-                        string json = File.ReadAllText(PhrasesPath, System.Text.Encoding.UTF8);
-                        var loadedDb = JsonSerializer.Deserialize<PhraseDatabase>(json, GetJsonOptions());
-                        if (loadedDb != null)
-                        {
-                            db = loadedDb;
-                        }
+                        db = MongoDatabaseService.LoadPhrases(conn, dbName);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"MongoDB 문구 로드 실패: {ex.Message}");
+                        db = new PhraseDatabase();
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    System.Diagnostics.Debug.WriteLine($"문구 데이터베이스 로드 실패: {ex.Message}");
+                    db = new PhraseDatabase();
+                    try
+                    {
+                        if (File.Exists(PhrasesPath))
+                        {
+                            string json = File.ReadAllText(PhrasesPath, System.Text.Encoding.UTF8);
+                            var loadedDb = JsonSerializer.Deserialize<PhraseDatabase>(json, GetJsonOptions());
+                            if (loadedDb != null)
+                                db = loadedDb;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"문구 데이터베이스 로드 실패: {ex.Message}");
+                    }
                 }
 
-                // assist 벨 코드가 없으면 자동 복구
                 EnsureDefaultPhrase(db);
-
                 return db;
             }
         }
@@ -171,6 +191,18 @@ namespace CareReceiverAgent.Host.Services
         {
             lock (_loadLock)
             {
+                if (UseMongo(out var conn, out var dbName))
+                {
+                    try
+                    {
+                        MongoDatabaseService.SavePhrases(conn, dbName, database);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"MongoDB 문구 저장 실패: {ex.Message}");
+                    }
+                    return;
+                }
                 try
                 {
                     string json = JsonSerializer.Serialize(database, GetJsonOptions());
@@ -214,21 +246,48 @@ namespace CareReceiverAgent.Host.Services
 
         public static SerialSettings LoadSerialSettings()
         {
+            if (UseMongo(out var conn, out var dbName))
+            {
+                try
+                {
+                    return MongoDatabaseService.LoadSerialSettings(conn, dbName);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"MongoDB 시리얼 설정 로드 실패: {ex.Message}");
+                }
+                return new SerialSettings();
+            }
             try
             {
                 if (File.Exists(SerialSettingsPath))
                 {
                     string json = File.ReadAllText(SerialSettingsPath, System.Text.Encoding.UTF8);
-                    var settings = JsonSerializer.Deserialize<SerialSettings>(json, GetJsonOptions());
-                    if (settings != null)
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    // 새 형식: { "Ports": [ { "Id", "PortName", ... } ] }
+                    if (root.TryGetProperty("Ports", out var portsEl) && portsEl.ValueKind == JsonValueKind.Array)
                     {
-                        return settings;
+                        var list = new List<SerialPortEntry>();
+                        foreach (var el in portsEl.EnumerateArray())
+                        {
+                            var entry = JsonSerializer.Deserialize<SerialPortEntry>(el.GetRawText(), GetJsonOptions());
+                            if (entry != null) list.Add(entry);
+                        }
+                        return new SerialSettings { Ports = list };
+                    }
+                    // 구 형식: { "PortName", "BaudRate", ... } 단일 포트
+                    if (root.TryGetProperty("PortName", out _))
+                    {
+                        var single = JsonSerializer.Deserialize<SerialPortEntry>(json, GetJsonOptions());
+                        if (single != null)
+                            return new SerialSettings { Ports = new List<SerialPortEntry> { single } };
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"?�리???�정 로드 ?�패: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Serial settings load error: {ex.Message}");
             }
 
             return new SerialSettings();
@@ -236,6 +295,18 @@ namespace CareReceiverAgent.Host.Services
 
         public static void SaveSerialSettings(SerialSettings settings)
         {
+            if (UseMongo(out var conn, out var dbName))
+            {
+                try
+                {
+                    MongoDatabaseService.SaveSerialSettings(conn, dbName, settings);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"MongoDB 시리얼 설정 저장 실패: {ex.Message}");
+                }
+                return;
+            }
             try
             {
                 string json = JsonSerializer.Serialize(settings, GetJsonOptions());
@@ -243,8 +314,110 @@ namespace CareReceiverAgent.Host.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"?�리???�정 ?�???�패: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Serial settings save error: {ex.Message}");
             }
+        }
+
+        public static RemoteControlSettings LoadRemoteControlSettings()
+        {
+            lock (_loadLock)
+            {
+                try
+                {
+                    if (File.Exists(RemoteControlPath))
+                    {
+                        var json = File.ReadAllText(RemoteControlPath, System.Text.Encoding.UTF8);
+                        var loaded = JsonSerializer.Deserialize<RemoteControlSettings>(json, GetJsonOptions());
+                        return NormalizeRemoteControl(loaded);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"리모콘 설정 로드 실패: {ex.Message}");
+                }
+                return NormalizeRemoteControl(null);
+            }
+        }
+
+        public static void SaveRemoteControlSettings(RemoteControlSettings? settings)
+        {
+            lock (_loadLock)
+            {
+                try
+                {
+                    var normalized = NormalizeRemoteControl(settings);
+                    var json = JsonSerializer.Serialize(normalized, GetJsonOptions());
+                    File.WriteAllText(RemoteControlPath, json, System.Text.Encoding.UTF8);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"리모콘 설정 저장 실패: {ex.Message}");
+                }
+            }
+        }
+
+        private static RemoteControlSettings NormalizeRemoteControl(RemoteControlSettings? input)
+        {
+            var outCfg = new RemoteControlSettings();
+            var map = new Dictionary<int, RemoteControlButton>();
+            if (input?.Buttons != null)
+            {
+                foreach (var b in input.Buttons)
+                {
+                    if (b == null) continue;
+                    if (b.Number < 1 || b.Number > 15) continue;
+                    map[b.Number] = new RemoteControlButton
+                    {
+                        Number = b.Number,
+                        Name = b.Name ?? string.Empty,
+                        SendCode = b.SendCode ?? string.Empty
+                    };
+                }
+            }
+            for (int i = 1; i <= 15; i++)
+            {
+                if (map.TryGetValue(i, out var b))
+                    outCfg.Buttons.Add(b);
+                else
+                    outCfg.Buttons.Add(new RemoteControlButton { Number = i, Name = string.Empty, SendCode = string.Empty });
+            }
+            return outCfg;
+        }
+
+        /// <summary>로컬에 적용된 setid (COM RX 시 이 설정 기준으로 알림). setid.md 규격.</summary>
+        public static string? LoadActiveSetId()
+        {
+            try
+            {
+                if (File.Exists(ActiveSetIdPath))
+                {
+                    var json = File.ReadAllText(ActiveSetIdPath, System.Text.Encoding.UTF8);
+                    var obj = JsonSerializer.Deserialize<ActiveSetIdDoc>(json);
+                    var s = obj?.ActiveSetId;
+                    return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public static void SaveActiveSetId(string? setid)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(new ActiveSetIdDoc { ActiveSetId = setid ?? "" }, GetJsonOptions());
+                File.WriteAllText(ActiveSetIdPath, json, System.Text.Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ActiveSetId save error: {ex.Message}");
+            }
+        }
+
+        private class ActiveSetIdDoc
+        {
+            [System.Text.Json.Serialization.JsonPropertyName("activeSetId")]
+            public string ActiveSetId { get; set; } = "";
         }
     }
 }

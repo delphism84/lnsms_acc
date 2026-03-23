@@ -30,11 +30,13 @@ partial class Form1
     {
         this.components = new System.ComponentModel.Container();
         this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-        this.ClientSize = new System.Drawing.Size(900, 600);
+        this.Padding = new System.Windows.Forms.Padding(0);
+        this.ClientSize = new System.Drawing.Size(1200, 800);
+        this.MinimumSize = new System.Drawing.Size(800, 500);
         this.Text = "장애인 도움요청 시스팀";
-        this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
-        this.MaximizeBox = false;
-        this.MinimizeBox = false;
+        this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Sizable;
+        this.MaximizeBox = true;
+        this.MinimizeBox = true;
         this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
         this.Resize += Form1_Resize;
         this.Load += Form1_Load;

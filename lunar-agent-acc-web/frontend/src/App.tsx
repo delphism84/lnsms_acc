@@ -3,6 +3,7 @@ import NotificationView from './components/NotificationView';
 import SettingsView from './components/SettingsView';
 import { CustomAlertProvider, showCustomAlert } from './components/CustomAlert';
 import { CustomConfirmProvider } from './components/CustomConfirm';
+import { CustomPromptProvider } from './components/CustomPrompt';
 import { getApiBaseUrl } from './services/api';
 import './App.css';
 
@@ -80,6 +81,21 @@ function App() {
           },
           body: JSON.stringify({ view }),
         });
+
+        // 런타임 타이틀 반영
+        try {
+          const r = await fetch(`${apiUrl}/api/settings/app`, {
+            signal: AbortSignal.timeout(1000)
+          });
+          if (r.ok) {
+            const cfg = await r.json();
+            if (cfg?.title) {
+              document.title = String(cfg.title);
+            }
+          }
+        } catch {
+          // ignore
+        }
       } catch (error) {
         console.error('초기 뷰 상태 업데이트 실패:', error);
       }
@@ -105,6 +121,7 @@ function App() {
     <div className="app-container">
       <CustomAlertProvider />
       <CustomConfirmProvider />
+      <CustomPromptProvider />
       {currentView === 'notification' && <NotificationView onNavigateToSettings={() => navigateToView('settings')} />}
       {currentView === 'settings' && <SettingsView onNavigateBack={() => navigateToView('notification')} />}
     </div>

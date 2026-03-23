@@ -1,5 +1,5 @@
 #define MyAppName "장애인호출관리시스템"
-#define MyAppVersion "2.2.0"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "NEcall"
 #define MyAppURL "https://lnsmsadmin.lunarsystem.co.kr"
 #define MyAppExeName "CareReceiverAgent.Host.exe"

@@ -1,0 +1,15 @@
+{
+  "name": "lunar-agent-acc-selftest-bot",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Serial bot + API self-test for lunar-agent-acc-web",
+  "type": "commonjs",
+  "scripts": {
+    "bot": "node bot.js",
+    "selftest": "node selftest.js"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
+}
+

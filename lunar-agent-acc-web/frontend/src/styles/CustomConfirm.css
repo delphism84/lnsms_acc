@@ -24,7 +24,7 @@
 
 .custom-confirm-container {
   background: #FFFFFF;
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 0;
   min-width: 400px;
   max-width: 500px;
@@ -74,7 +74,7 @@
   font-size: 14px;
   font-weight: 500;
   border: none;
-  border-radius: 4px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 60px;
@@ -105,5 +105,28 @@
 
 .custom-confirm-button.cancel-button:active {
   background-color: #E5E5EA;
+}
+
+/* Cupertino input (for CustomPrompt) */
+.cupertino-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 16px;
+  border-radius: 12px;
+  border: 1px solid #D1D1D6;
+  background: #F2F2F7;
+  color: #000000;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.cupertino-input::placeholder {
+  color: #8E8E93;
+}
+
+.cupertino-input:focus {
+  border-color: #007AFF;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
 }
 

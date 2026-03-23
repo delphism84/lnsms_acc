@@ -1,3 +1,4 @@
+using System.Linq;
 using CareReceiverAgent.Host.Hubs;
 using CareReceiverAgent.Host.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -5,213 +6,150 @@ using Microsoft.AspNetCore.SignalR;
 namespace CareReceiverAgent.Host.Services
 {
     /// <summary>
-    /// 백그?�운???�비??- ?�리???�트 모니?�링 �??�림 처리
+    /// 백그라운드 서비스 - 시리얼 포트 모니터링 및 알림 처리 (다중 포트)
     /// </summary>
     public class SerialPortBackgroundService : BackgroundService
     {
-        private readonly SerialPortService _serialPort;
+        private readonly SerialPortManagerService _manager;
         private readonly NotificationService _notification;
+        private readonly NotificationQueueService _queue;
         private readonly IHubContext<NotificationHub> _hubContext;
         private readonly ILogger<SerialPortBackgroundService> _logger;
 
         public SerialPortBackgroundService(
-            SerialPortService serialPort,
+            SerialPortManagerService manager,
             NotificationService notification,
+            NotificationQueueService queue,
             IHubContext<NotificationHub> hubContext,
             ILogger<SerialPortBackgroundService> logger)
         {
-            _serialPort = serialPort;
+            _manager = manager;
             _notification = notification;
+            _queue = queue;
             _hubContext = hubContext;
             _logger = logger;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // ?�리???�트 ?�벤???�결
-            _serialPort.DataReceived += async (s, data) =>
+            _manager.DataReceived += async (s, e) =>
             {
-                await ProcessSerialData(data);
+                await ProcessSerialData(e.PortName, e.Data);
             };
 
-            // 시리얼 포트 자동 연결(실패 시 재시도)
+            // 등록된 포트 중 AutoConnect인 항목 자동 연결 (실패 시 재시도)
             while (!stoppingToken.IsCancellationRequested)
             {
                 var settings = JsonDatabaseService.LoadSerialSettings();
-
-                if (!settings.AutoConnect)
-                {
+                var autoEntries = (settings.Ports ?? new List<SerialPortEntry>()).Where(p => p.AutoConnect).ToList();
+                if (autoEntries.Count == 0)
                     break;
-                }
 
-                if (_serialPort.IsConnected)
-                {
+                var connected = _manager.ConnectedPortNames;
+                var missing = autoEntries.Where(p => !connected.Contains(p.PortName, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (missing.Count == 0)
                     break;
-                }
 
-                var connected = _serialPort.Connect(settings.PortName, settings.BaudRate);
-                if (connected)
+                foreach (var entry in missing)
                 {
-                    _logger.LogInformation("시리얼 포트 연결 성공: {Port}", settings.PortName);
-                    break;
+                    var ok = _manager.Connect(entry);
+                    if (ok)
+                        _logger.LogInformation("시리얼 포트 연결 성공: {Port}", entry.PortName);
+                    else
+                        _logger.LogWarning("시리얼 포트 연결 실패: {Port} (5초 후 재시도)", entry.PortName);
                 }
-
-                _logger.LogWarning("시리얼 포트 연결 실패: {Port} (5초 후 재시도)", settings.PortName);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
 
-            // ?�비??종료 ?��?
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
 
-        private async Task ProcessSerialData(string data)
+        private async Task ProcessSerialData(string? portName, string data)
         {
             try
             {
-                // 통신 체크 응답 (Care Receiver -> PC)
-                if (data == "ok")
+                var svc = _manager.GetService(portName);
+                var normalized = svc != null ? svc.NormalizeInboundLine(data) : data;
+
+                string body = normalized;
+                var dot = normalized.IndexOf('.');
+                if (dot > 0 && dot < normalized.Length - 1)
+                    body = normalized.Substring(dot + 1);
+                body = body.Trim();
+
+                if (body.StartsWith("seed=", StringComparison.Ordinal))
+                {
+                    var mark = body.Substring("seed=".Length);
+                    svc?.UpdateSessionSeedFromMark(mark);
+                    _logger.LogInformation("세션 시드 동기화 수신(보안 모드 활성화)");
+                    return;
+                }
+
+                if (string.Equals(body, "ok", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogInformation("통신 체크 응답 수신: ok");
                     return;
                 }
 
-                // 준비완료 메시지 (Care Receiver -> PC)
-                if (data == "crcv.ready")
+                if (string.Equals(body, "ready", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogInformation("Care Receiver 준비완료");
                     return;
                 }
 
-                // 도움 요청 메시지 (Care Receiver -> PC)
-                // 형식: crcv.assist\r\n
-                if (data.StartsWith("crcv.assist"))
+                if (body.StartsWith("assist", StringComparison.OrdinalIgnoreCase))
                 {
                     string assistBellCode = "crcv.assist";
                     _logger.LogInformation("도움 요청 수신: {BellCode}", assistBellCode);
-                    
-                    // 벨 감지 API에 알림
                     Controllers.BellController.SetDetectedBell(assistBellCode);
-                    
-                    // 데이터베이스 재로드 (최신 데이터 확인)
                     _notification.ReloadDatabase();
-                    
                     var result = _notification.ProcessBellCode(assistBellCode);
-                    
                     if (result != null && result.IsRegistered)
                     {
-                        // 등록된 벨인지 확인
                         var phrase = _notification.GetPhraseByBellCode(assistBellCode);
                         bool isRegisteredBell = phrase != null && phrase.IsEnabled;
-                        
-                        _logger.LogInformation("도움 요청 처리: {BellCode}, 등록됨: {IsRegistered}, 문구ID: {PhraseId}", 
+                        _logger.LogInformation("도움 요청 처리: {BellCode}, 등록됨: {IsRegistered}, 문구ID: {PhraseId}",
                             assistBellCode, isRegisteredBell, phrase?.Id ?? 0);
-                        
-                        if (isRegisteredBell)
-                        {
-                            // 벨 등록 모달이 열려있으면 알림창으로 이동하지 않음
-                            bool isBellAddModalOpen = Controllers.WindowController.IsBellAddModalOpen();
-                            if (!isBellAddModalOpen)
-                            {
-                                // 등록된 벨인 경우 창 표시 및 알림창 전환
-                                Form1.ShowNotificationWindow();
-                            }
-                            else
-                            {
-                                _logger.LogInformation("벨 등록 모달이 열려있어 알림창 표시 안 함: {BellCode}", assistBellCode);
-                            }
-                        }
-                        
-                        // uid 맵에 등록 (등록된 벨만)
-                        Controllers.NotificationsController.UpsertActiveNotification(result);
-                        
-                        // SignalR로 실시간 푸시 - 등록된 벨만 전송
-                        await _hubContext.Clients.All.SendAsync("ReceiveNotification", result);
+                        bool isBellAddModalOpen = Controllers.WindowController.IsBellAddModalOpen();
+                        bool isSettingsView = Controllers.WindowController.IsSettingsView();
+                        bool canShowNow = isRegisteredBell && !isBellAddModalOpen && !isSettingsView;
+                        await _queue.EnqueueAsync(result, canShowNow);
                     }
                     else if (result != null && !result.IsRegistered)
-                    {
-                        // 등록되지 않은 벨은 로그만 기록하고 알림 전송하지 않음
                         _logger.LogInformation("등록되지 않은 도움 요청 수신: {BellCode} (알림 전송 안 함)", assistBellCode);
-                    }
-                    
                     return;
                 }
 
-                // 벨 수신코드 처리 (Care Receiver -> PC)
-                // 형식: crcv.bell=0d3213\r\n
-                if (data.StartsWith("crcv.bell="))
+                if (body.StartsWith("bell=", StringComparison.OrdinalIgnoreCase))
                 {
-                    // = 다음부터 \r 또는 \n까지의 문자열 추출
-                    int startIndex = data.IndexOf('=') + 1;
-                    int endIndex = data.Length;
-                    
-                    // \r 또는 \n 찾기
-                    int crIndex = data.IndexOf('\r', startIndex);
-                    int lfIndex = data.IndexOf('\n', startIndex);
-                    
-                    if (crIndex >= startIndex && crIndex < endIndex)
-                        endIndex = crIndex;
-                    if (lfIndex >= startIndex && lfIndex < endIndex)
-                        endIndex = Math.Min(endIndex, lfIndex);
-                    
-                    if (startIndex < endIndex)
+                    int startIndex = body.IndexOf('=') + 1;
+                    if (startIndex > 0 && startIndex < body.Length)
                     {
-                        string bellCode = data.Substring(startIndex, endIndex - startIndex).ToLowerInvariant();
-                        
+                        string bellCode = body.Substring(startIndex).Trim().ToLowerInvariant();
                         _logger.LogInformation("벨 코드 수신: {BellCode}, 원본: {OriginalData}", bellCode, data);
-                        
-                        // 벨 감지 API에 알림 (소문자로 정규화된 코드 저장)
                         Controllers.BellController.SetDetectedBell(bellCode);
-                        
-                        // 데이터베이스 재로드 (최신 데이터 확인)
                         _notification.ReloadDatabase();
-                        
                         var result = _notification.ProcessBellCode(bellCode);
-
                         if (result != null && result.IsRegistered)
                         {
-                            // 등록된 벨인지 확인 (벨 코드로 문구를 찾았는지)
                             var phrase = _notification.GetPhraseByBellCode(bellCode);
                             bool isRegisteredBell = phrase != null && phrase.IsEnabled;
-                            
-                            _logger.LogInformation("벨 코드 처리: {BellCode}, 등록됨: {IsRegistered}, 문구ID: {PhraseId}", 
+                            _logger.LogInformation("벨 코드 처리: {BellCode}, 등록됨: {IsRegistered}, 문구ID: {PhraseId}",
                                 bellCode, isRegisteredBell, phrase?.Id ?? 0);
-                            
-                            if (isRegisteredBell)
-                            {
-                                // 벨 등록 모달이 열려있으면 알림창으로 이동하지 않음
-                                bool isBellAddModalOpen = Controllers.WindowController.IsBellAddModalOpen();
-                                if (!isBellAddModalOpen)
-                                {
-                                    // 등록된 벨인 경우 창 표시 및 알림창 전환
-                                    Form1.ShowNotificationWindow();
-                                }
-                                else
-                                {
-                                    _logger.LogInformation("벨 등록 모달이 열려있어 알림창 표시 안 함: {BellCode}", bellCode);
-                                }
-                            }
-                            
-                            // uid 맵에 등록 (등록된 벨만)
-                            Controllers.NotificationsController.UpsertActiveNotification(result);
-                            
-                            // SignalR로 실시간 푸시 - 등록된 벨만 전송
-                            await _hubContext.Clients.All.SendAsync("ReceiveNotification", result);
-                            _logger.LogInformation("벨 코드 알림 전송 완료: {BellCode}, 등록됨: {IsRegistered}, 메시지: {Message}", 
-                                bellCode, isRegisteredBell, result.Message);
+                            bool isBellAddModalOpen = Controllers.WindowController.IsBellAddModalOpen();
+                            bool isSettingsView = Controllers.WindowController.IsSettingsView();
+                            bool canShowNow = isRegisteredBell && !isBellAddModalOpen && !isSettingsView;
+                            await _queue.EnqueueAsync(result, canShowNow);
+                            _logger.LogInformation("벨 코드 큐잉 완료: {BellCode}, 표시가능: {CanShowNow}, 메시지: {Message}",
+                                bellCode, canShowNow, result.Message);
                         }
                         else if (result != null && !result.IsRegistered)
-                        {
-                            // 등록되지 않은 벨은 로그만 기록하고 알림 전송하지 않음
                             _logger.LogInformation("등록되지 않은 벨 코드 수신: {BellCode} (알림 전송 안 함)", bellCode);
-                        }
                     }
                     else
-                    {
                         _logger.LogWarning("잘못된 벨 코드 형식: {Data}", data);
-                    }
                     return;
                 }
-
             }
             catch (Exception ex)
             {
@@ -221,9 +159,8 @@ namespace CareReceiverAgent.Host.Services
 
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
-            _serialPort.Disconnect();
+            _manager.DisconnectAll();
             await base.StopAsync(cancellationToken);
         }
     }
 }
-

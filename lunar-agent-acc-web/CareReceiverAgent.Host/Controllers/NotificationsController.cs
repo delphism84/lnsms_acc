@@ -13,102 +13,86 @@ namespace CareReceiverAgent.Host.Controllers
     {
         private readonly NotificationService _notificationService;
         private readonly IHubContext<NotificationHub> _hubContext;
+        private readonly NotificationQueueService _queue;
         private readonly ILogger<NotificationsController> _logger;
-        private static readonly object _lock = new object();
-
-        // uid -> notification (active alarms)
-        private static readonly Dictionary<string, NotificationResult> _activeByUid = new();
 
         public NotificationsController(
             NotificationService notificationService,
             IHubContext<NotificationHub> hubContext,
+            NotificationQueueService queue,
             ILogger<NotificationsController> logger)
         {
             _notificationService = notificationService;
             _hubContext = hubContext;
+            _queue = queue;
             _logger = logger;
         }
 
         [HttpGet("latest")]
         public ActionResult GetLatestNotification()
         {
-            lock (_lock)
+            var n = _queue.GetCurrent();
+            if (n == null) return Ok(null);
+            return Ok(new
             {
-                // (호환용) active 중 첫 번째를 반환
-                var n = _activeByUid.Values.FirstOrDefault();
-                if (n == null) return Ok(null);
-                return Ok(new
-                {
-                    message = n.Message,
-                    color = n.Color,
-                    type = n.Type,
-                    isRegistered = n.IsRegistered,
-                    uid = n.Uid
-                });
-            }
+                message = n.Message,
+                color = n.Color,
+                type = n.Type,
+                isRegistered = n.IsRegistered,
+                uid = n.Uid
+            });
         }
 
         [HttpGet("active")]
         public ActionResult GetActiveNotifications()
         {
-            lock (_lock)
+            // 큐는 1개씩 표시가 원칙이므로, 현재 1개만 반환(호환을 위해 notifications 배열은 유지)
+            var current = _queue.GetCurrent();
+            var list = new List<object>();
+            if (current != null)
             {
-                var list = _activeByUid.Values
-                    .Select(n => new
-                    {
-                        uid = n.Uid,
-                        message = n.Message,
-                        color = n.Color,
-                        type = n.Type,
-                        isRegistered = n.IsRegistered
-                    })
-                    .ToList();
-
-                return Ok(new { notifications = list });
+                list.Add(new
+                {
+                    uid = current.Uid,
+                    message = current.Message,
+                    color = current.Color,
+                    type = current.Type,
+                    isRegistered = current.IsRegistered,
+                    autoCloseEnabled = current.AutoCloseEnabled,
+                    autoCloseSeconds = current.AutoCloseSeconds,
+                    imageUrl = current.ImageUrl
+                });
             }
+
+            return Ok(new
+            {
+                notifications = list,
+                queueLength = _queue.GetQueueLength()
+            });
         }
 
         public class ConfirmRequest
         {
             public string? uid { get; set; }
             public bool? hideWindow { get; set; }
+            public bool? clearAll { get; set; }
         }
 
         [HttpPost("confirm")]
         public ActionResult Confirm([FromBody] ConfirmRequest? request = null)
         {
-            lock (_lock)
-            {
-                // 기본: 전체 clear
-                if (request == null || string.IsNullOrWhiteSpace(request.uid))
-                {
-                    _activeByUid.Clear();
-                }
-                else
-                {
-                    _activeByUid.Remove(request.uid.Trim());
-                }
+            // 기본: "현재 1개"만 confirm (요구사항)
+            // clearAll=true일 때만 전체 제거
+            _queue.ConfirmAsync(
+                    uid: request?.uid,
+                    canShowNext: true,
+                    hideWindow: request?.hideWindow != false,
+                    clearAll: request?.clearAll == true
+                )
+                .GetAwaiter()
+                .GetResult();
 
-                // 기본은 창 닫기. 설정 버튼 같은 케이스는 hideWindow=false로 유지 가능.
-                if (request?.hideWindow != false)
-                {
-                    Form1.HideWindow();
-                }
-
-                return Ok(new { success = true });
-            }
-        }
-
-        public static void UpsertActiveNotification(NotificationResult notification)
-        {
-            lock (_lock)
-            {
-                // 등록된 벨만, uid가 있는 경우만 active로 관리
-                if (!notification.IsRegistered) return;
-                if (string.IsNullOrWhiteSpace(notification.Uid)) return;
-
-                _activeByUid[notification.Uid.Trim()] = notification;
-            }
+            return Ok(new { success = true });
         }
 
         [HttpPost("test")]
@@ -136,9 +120,9 @@ namespace CareReceiverAgent.Host.Controllers
                         Uid = phrase.Uid
                     };
 
-                    Form1.ShowNotificationWindow();
-                    UpsertActiveNotification(resultByUid);
-                    await _hubContext.Clients.All.SendAsync("ReceiveNotification", resultByUid);
+                    bool isSettingsView = WindowController.IsSettingsView();
+                    bool canShowNow = !isSettingsView;
+                    await _queue.EnqueueAsync(resultByUid, canShowNow);
 
                     return Ok(new { success = true, message = "알림 테스트가 실행되었습니다." });
                 }
@@ -166,18 +150,9 @@ namespace CareReceiverAgent.Host.Controllers
                     
                     _logger.LogInformation("알림 테스트: 벨 코드 처리 완료, 등록됨: {IsRegistered}", isRegisteredBell);
                     
-                    if (isRegisteredBell)
-                    {
-                        // 등록된 벨인 경우 무조건 창 표시 및 알림창 전환
-                        Form1.ShowNotificationWindow();
-                        _logger.LogInformation("알림 테스트: 알림창 표시");
-                    }
-                    
-                    // uid 맵에 등록 (등록된 벨만)
-                    UpsertActiveNotification(result);
-                    
-                    // SignalR로 실시간 알림 전송 - 등록된 벨만 전송
-                    await _hubContext.Clients.All.SendAsync("ReceiveNotification", result);
+                    bool isSettingsView = WindowController.IsSettingsView();
+                    bool canShowNow = isRegisteredBell && !isSettingsView;
+                    await _queue.EnqueueAsync(result, canShowNow);
                 }
                 else if (result != null && !result.IsRegistered)
                 {

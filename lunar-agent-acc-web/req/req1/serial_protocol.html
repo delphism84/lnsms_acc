@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>시리얼 프로토콜 · 시리얼번호 · 암호화 (req1 최종)</title>
+  <style>
+    :root { --bg: #1a1a2e; --card: #16213e; --text: #e8e8e8; --accent: #0f3460; --border: #0f3460; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; line-height: 1.6; }
+    h1 { font-size: 1.5rem; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h2 { font-size: 1.15rem; margin-top: 24px; color: #a0c4ff; }
+    section { background: var(--card); border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px 12px; border: 1px solid var(--border); }
+    th { background: var(--accent); }
+    .before { background: #2d1f1f; }
+    .after { background: #1f2d1f; }
+    code { background: rgba(0,0,0,.3); padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', monospace; }
+    pre { margin: 0; overflow-x: auto; font-size: 0.85rem; }
+    .label { font-weight: 600; color: #a0c4ff; }
+    .note { font-size: 0.9rem; color: #b0b0b0; margin-top: 8px; }
+    ul { margin: 0.5em 0; padding-left: 1.2em; }
+  </style>
+</head>
+<body>
+  <h1>시리얼 프로토콜 · 시리얼번호 · 암호화 (req1-analysis 최종 적용)</h1>
+  <p class="note">리시버(RF 수신) → RS232 → PC Agent. 수신 데이터: <strong>sn / 호출코드 / 암호화ON</strong> 형태.</p>
+
+  <!-- 1. 프로토콜 개요 -->
+  <section>
+    <h2>1. 최종 프로토콜 (UART v4)</h2>
+    <ul>
+      <li>라인 구분: <code>\r</code> (CR). <code>\n</code>은 무시.</li>
+      <li>형식: <code>&lt;prefix&gt;.&lt;body&gt;</code>. prefix는 8자리 시리얼번호 또는 <code>crcv</code>.</li>
+      <li>통신 방향: PC → 모듈 (TX), 모듈 → PC (RX).</li>
+    </ul>
+    <table>
+      <thead><tr><th>구분</th><th>형식</th><th>설명</th></tr></thead>
+      <tbody>
+        <tr><td>통신 체크 (PC→모듈)</td><td><code>&lt;sn&gt;\r</code></td><td>sn: 8자리 숫자. 모를 때 <code>00000000</code></td></tr>
+        <tr><td>통신 체크 응답 (모듈→PC)</td><td><code>&lt;sn&gt;.ok\r</code></td><td>수신 시 PC가 해당 sn 획득</td></tr>
+        <tr><td>준비완료 (모듈→PC)</td><td><code>&lt;sn&gt;.ready\r</code></td><td>Care Receiver 준비완료</td></tr>
+        <tr><td>도움 요청 (모듈→PC)</td><td><code>&lt;sn&gt;.assist\r</code></td><td>벨코드 <code>crcv.assist</code>로 처리</td></tr>
+        <tr><td>벨 코드 (모듈→PC)</td><td><code>&lt;sn&gt;.bell=&lt;code&gt;\r</code></td><td>호출코드(소문자 정규화)</td></tr>
+        <tr><td>시드 동기화 (양방향)</td><td><code>&lt;sn&gt;.seed=&lt;44자&gt;\r</code></td><td>암호화 세션 시드 공유</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 2. 시리얼번호 Before/After -->
+  <section>
+    <h2>2. 시리얼번호 (8자리)</h2>
+    <p class="label">Before (설정 전 / 모를 때)</p>
+    <table class="before">
+      <tr><th>항목</th><th>값</th></tr>
+      <tr><td>DeviceSerialNumber (설정)</td><td><code>00000000</code></td></tr>
+      <tr><td>PC → 모듈 통신 체크</td><td><code>00000000\r</code></td></tr>
+      <tr><td>모듈 → PC 응답 예</td><td><code>12345678.ok\r</code> → PC가 sn <code>12345678</code> 획득</td></tr>
+    </table>
+    <p class="label">After (설정 후 / sn 확정)</p>
+    <table class="after">
+      <tr><th>항목</th><th>값</th></tr>
+      <tr><td>DeviceSerialNumber (설정)</td><td><code>12345678</code> (8자리 숫자)</td></tr>
+      <tr><td>PC → 모듈 통신 체크</td><td><code>12345678\r</code></td></tr>
+      <tr><td>보안 ON 시 seed 전송</td><td><code>12345678.seed=&lt;44자 mark&gt;\r</code></td></tr>
+    </table>
+    <p class="note">시리얼번호는 <code>&lt;sn&gt;.ok</code> 수신 시 자동 갱신되며, 로그에 "device serial detected" 기록.</p>
+  </section>
+
+  <!-- 3. 암호화 Before/After -->
+  <section>
+    <h2>3. 암호화 (선택)</h2>
+    <p>암호화 OFF: 모든 메시지 평문. 암호화 ON: 세션 시드 동기화 후, 페이로드를 16바이트(32-hex)로 인코딩/복호화.</p>
+
+    <p class="label">Before (암호화 OFF · 평문)</p>
+    <table class="before">
+      <tr><th>방향</th><th>라인 예시</th></tr>
+      <tr><td>모듈 → PC (도움 요청)</td><td><code>12345678.assist\r</code></td></tr>
+      <tr><td>모듈 → PC (벨 코드)</td><td><code>12345678.bell=qa.1\r</code></td></tr>
+      <tr><td>모듈 → PC (통신 체크 응답)</td><td><code>12345678.ok\r</code></td></tr>
+    </table>
+
+    <p class="label">After (암호화 ON · 동기화 및 암호문)</p>
+    <table class="after">
+      <tr><th>단계</th><th>내용</th></tr>
+      <tr><td>1) PC → 모듈 시드 전송</td><td><code>12345678.seed=&lt;44자 mark&gt;\r</code> (평문). mark 안에 세션 시드(16bit)가 숨겨짐.</td></tr>
+      <tr><td>2) 모듈 → PC 시드 전송</td><td><code>crcv.seed=&lt;44자&gt;\r</code> 또는 <code>&lt;sn&gt;.seed=&lt;44자&gt;\r</code>. PC는 DecodeSeedMarkString으로 시드 복구 후 SecureEnabled=true.</td></tr>
+      <tr><td>3) 평문 → 암호문 (모듈→PC 예)</td><td>평문 <code>12345678.bell=qa.1</code> → body <code>bell=qa.1</code> (최대 15바이트) + CRC 1바이트 = 16바이트 → 세드 기반 난독화+스왑 → 32-hex. 수신 라인: <code>12345678.&lt;32hex&gt;\r</code></td></tr>
+      <tr><td>4) 암호문 → 평문 (PC 수신 시)</td><td><code>12345678.&lt;32hex&gt;</code> 수신 시 TryDecryptLine(sessionSeed) → <code>12345678.bell=qa.1</code> 로 복원 후 기존 프로토콜처럼 처리.</td></tr>
+    </table>
+    <p class="note">페이로드: 최대 15바이트 평문 + CRC-8 1바이트 = 16바이트. 인코딩: 세션 시드 기반 XOR/오프셋/스왑 후 32자 hex 문자열.</p>
+  </section>
+
+  <!-- 4. Before/After 요약 예제 -->
+  <section>
+    <h2>4. Before / After 요약 예제</h2>
+    <table>
+      <thead><tr><th>상황</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>시리얼 번호</td>
+          <td><code>00000000</code> (미확인)</td>
+          <td><code>12345678</code> (<code>&lt;sn&gt;.ok</code> 수신 후 확정)</td>
+        </tr>
+        <tr>
+          <td>도움 요청 1건 (평문)</td>
+          <td><code>12345678.assist\r</code></td>
+          <td>동일 (암호화 OFF 시)</td>
+        </tr>
+        <tr>
+          <td>도움 요청 1건 (암호 ON)</td>
+          <td>평문 <code>12345678.assist</code></td>
+          <td>RX: <code>12345678.&lt;32hex&gt;\r</code> → 복호화 → <code>12345678.assist</code> → assist 처리</td>
+        </tr>
+        <tr>
+          <td>벨 코드 호출 (평문)</td>
+          <td><code>12345678.bell=qa.1\r</code></td>
+          <td>동일 (암호화 OFF 시)</td>
+        </tr>
+        <tr>
+          <td>벨 코드 호출 (암호 ON)</td>
+          <td>평문 body <code>bell=qa.1</code></td>
+          <td>RX: <code>12345678.&lt;32hex&gt;\r</code> → 복호화 → <code>12345678.bell=qa.1</code> → bell 코드 처리·알림 큐</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5. req1-analysis 반영 사항 -->
+  <section>
+    <h2>5. req1-analysis 반영</h2>
+    <ul>
+      <li><strong>수신 형태</strong>: sn / 호출코드 / 암호화ON → 위 프로토콜과 시리얼번호·암호화로 수신.</li>
+      <li><strong>리시버</strong>: RF 수신만 → RS232 → PC. 포트·전송속도·자동인식(COM) 설정.</li>
+      <li><strong>수신 모듈</strong>: 시리얼번호·호출벨 설정 필드 직접 수정 가능.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>6. 구현 참조 (CareReceiverAgent.Host)</h2>
+    <p class="note">본 문서는 다음 코드 기준으로 정리됨.</p>
+    <ul>
+      <li>프로토콜 파싱: <code>SerialPortBackgroundService.ProcessSerialData</code> (ok, ready, assist, bell=, seed=)</li>
+      <li>시리얼번호: <code>SerialPortService</code> (DeviceSerialNumber 8자리, <code>&lt;sn&gt;.ok</code> 수신 시 CurrentSerialNumber 갱신)</li>
+      <li>암호화: <code>SecureSerialCodec</code> (세드 생성/복구, 32-hex 페이로드 암복호, CRC-8)</li>
+    </ul>
+  </section>
+</body>
+</html>

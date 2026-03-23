@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Ports;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,11 +16,13 @@ namespace CareReceiverAgent.Host.Services
         private SerialPort? _serialPort;
         private Thread? _readThread;
         private CancellationTokenSource? _cancellationTokenSource;
-        private string _buffer = string.Empty;
+        private readonly System.Collections.Generic.List<byte> _rxBuffer = new System.Collections.Generic.List<byte>(4096);
         private StreamWriter? _logWriter;
         private string? _currentLogFile;
         private bool _loggingEnabled = true; // 기본값: on
         private readonly object _logLock = new object();
+        private string _deviceSerialHint = "00000000";
+        private string? _pendingSeedMark;
 
         public event EventHandler<string>? DataReceived;
         public event EventHandler<bool>? ConnectionStatusChanged;
@@ -27,6 +30,10 @@ namespace CareReceiverAgent.Host.Services
         public bool IsConnected => _serialPort?.IsOpen ?? false;
         public string? PortName { get; private set; }
         public int BaudRate { get; private set; }
+        public bool SecureEnabled { get; private set; }
+        public ushort? SessionSeed { get; private set; }
+        public string? LastConnectError { get; private set; }
+        public string? CurrentSerialNumber { get; private set; }
         public bool LoggingEnabled 
         { 
             get => _loggingEnabled; 
@@ -37,48 +44,77 @@ namespace CareReceiverAgent.Host.Services
         {
         }
 
-        public bool Connect(string portName, int baudRate = 9600)
+        public bool Connect(string portName, int baudRate = 9600, bool secureEnabled = false, string? deviceSerialNumber = null)
         {
-            try
+            LastConnectError = null;
+            Disconnect();
+
+            PortName = portName;
+            BaudRate = baudRate;
+            SecureEnabled = secureEnabled;
+            SessionSeed = null;
+            CurrentSerialNumber = null;
+            _pendingSeedMark = null;
+            _deviceSerialHint = NormalizeSerial(deviceSerialNumber) ?? "00000000";
+
+            // 재오픈 직후 간헐적 실패(잠금/드라이버 지연) 방지를 위해 짧게 재시도
+            for (int attempt = 1; attempt <= 3; attempt++)
             {
-                Disconnect();
-
-                PortName = portName;
-                BaudRate = baudRate;
-
-                _serialPort = new SerialPort(portName, baudRate, Parity.None, 8, StopBits.One)
+                try
                 {
-                    Encoding = Encoding.UTF8,
-                    ReadTimeout = 1000,
-                    WriteTimeout = 1000
-                };
+                    var sp = new SerialPort(portName, baudRate, Parity.None, 8, StopBits.One)
+                    {
+                        Encoding = Encoding.ASCII,
+                        ReadTimeout = 200,
+                        WriteTimeout = 1000
+                    };
 
-                _serialPort.Open();
+                    sp.Open();
+                    _serialPort = sp;
 
-                // 로그 파일 초기화
-                InitializeLogFile(portName);
+                    // 로그 파일 초기화
+                    InitializeLogFile(portName);
 
-                _cancellationTokenSource = new CancellationTokenSource();
-                _readThread = new Thread(() => ReadThreadProc(_cancellationTokenSource.Token))
+                    _cancellationTokenSource = new CancellationTokenSource();
+                    _readThread = new Thread(() => ReadThreadProc(_cancellationTokenSource.Token))
+                    {
+                        IsBackground = true,
+                        Name = "SerialPortReadThread"
+                    };
+                    _readThread.Start();
+
+                    ConnectionStatusChanged?.Invoke(this, true);
+
+                    // 초기 핸드셰이크
+                    // 1) 통신체크: <시리얼> (없으면 "00000000")
+                    SendCommand(_deviceSerialHint);
+                    // 2) 보안모드: <시리얼>.seed=<mark> (시리얼을 아직 모르면 ok 수신 후 전송)
+                    if (SecureEnabled)
+                    {
+                        SessionSeed = SecureSerialCodec.GenerateSessionSeed();
+                        _pendingSeedMark = SecureSerialCodec.MakeSeedMarkString(SessionSeed.Value);
+                        if (_deviceSerialHint != "00000000")
+                        {
+                            SendCommand($"{_deviceSerialHint}.seed={_pendingSeedMark}");
+                            _pendingSeedMark = null;
+                            CurrentSerialNumber = _deviceSerialHint;
+                        }
+                    }
+
+                    return true;
+                }
+                catch (Exception ex)
                 {
-                    IsBackground = true,
-                    Name = "SerialPortReadThread"
-                };
-                _readThread.Start();
-
-                ConnectionStatusChanged?.Invoke(this, true);
-
-                // 통신 체크 명령 전송 (PC -> Care Receiver)
-                SendCommand("crcv");
-
-                return true;
+                    LastConnectError = ex.Message;
+                    System.Diagnostics.Debug.WriteLine($"시리얼 포트 연결 실패(attempt {attempt}): {ex.Message}");
+                    try { _serialPort?.Dispose(); } catch { }
+                    _serialPort = null;
+                    ConnectionStatusChanged?.Invoke(this, false);
+                    Thread.Sleep(300);
+                }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"시리얼 포트 연결 실패: {ex.Message}");
-                ConnectionStatusChanged?.Invoke(this, false);
-                return false;
-            }
+
+            return false;
         }
         
         private void InitializeLogFile(string portName)
@@ -86,15 +122,15 @@ namespace CareReceiverAgent.Host.Services
             try
             {
                 // 로그 디렉토리 생성
-                var logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+                var logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "log");
                 if (!Directory.Exists(logDir))
                 {
                     Directory.CreateDirectory(logDir);
                 }
 
-                // 날짜별 파일명 생성 (comxx_250101.log 형식)
+                // 날짜별 파일명 생성 (log_260104.txt 형식)
                 var dateStr = DateTime.Now.ToString("yyMMdd");
-                var fileName = $"{portName.ToLower()}_{dateStr}.log";
+                var fileName = $"log_{dateStr}.txt";
                 var filePath = Path.Combine(logDir, fileName);
 
                 _currentLogFile = filePath;
@@ -106,7 +142,7 @@ namespace CareReceiverAgent.Host.Services
                     AutoFlush = true
                 };
 
-                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 포트 연결: {portName} ({BaudRate} baud)");
+                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 포트 연결: {portName} ({BaudRate} baud), deviceSerialHint={_deviceSerialHint}, secure={SecureEnabled}");
             }
             catch (Exception ex)
             {
@@ -136,10 +172,10 @@ namespace CareReceiverAgent.Host.Services
         
         private void CheckAndRotateLogFile()
         {
-            if (PortName == null || _currentLogFile == null) return;
+            if (_currentLogFile == null) return;
 
             var currentDateStr = DateTime.Now.ToString("yyMMdd");
-            var expectedFileName = $"{PortName.ToLower()}_{currentDateStr}.log";
+            var expectedFileName = $"log_{currentDateStr}.txt";
             var expectedFilePath = Path.Combine(
                 Path.GetDirectoryName(_currentLogFile) ?? AppDomain.CurrentDomain.BaseDirectory,
                 expectedFileName);
@@ -196,10 +232,28 @@ namespace CareReceiverAgent.Host.Services
                 _currentLogFile = null;
 
                 ConnectionStatusChanged?.Invoke(this, false);
+                SessionSeed = null;
+                SecureEnabled = false;
+                CurrentSerialNumber = null;
+                _pendingSeedMark = null;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"시리얼 포트 연결 해제 실패: {ex.Message}");
+            }
+        }
+
+        public void UpdateSessionSeedFromMark(string mark44)
+        {
+            try
+            {
+                var seed = SecureSerialCodec.DecodeSeedMarkString(mark44);
+                SessionSeed = seed;
+                SecureEnabled = true;
+            }
+            catch
+            {
+                // ignore
             }
         }
 
@@ -210,9 +264,9 @@ namespace CareReceiverAgent.Host.Services
                 if (_serialPort?.IsOpen == true)
                 {
                     // \r만 전송 (\n 제외)
-                    _serialPort.Write(command + "\r");
-                    // TX 로그 기록
-                    WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] TX: {command}");
+                    var bytes = Encoding.ASCII.GetBytes((command ?? string.Empty) + "\r");
+                    _serialPort.Write(bytes, 0, bytes.Length);
+                    WriteLogFrame("TX", bytes);
                 }
             }
             catch (Exception ex)
@@ -230,10 +284,18 @@ namespace CareReceiverAgent.Host.Services
                 {
                     if (_serialPort.BytesToRead > 0)
                     {
-                        string data = _serialPort.ReadExisting();
-                        if (!string.IsNullOrEmpty(data))
+                        int n = _serialPort.BytesToRead;
+                        if (n < 1)
                         {
-                            ProcessReceivedData(data);
+                            Thread.Sleep(5);
+                            continue;
+                        }
+                        byte[] buf = new byte[n];
+                        int read = _serialPort.Read(buf, 0, n);
+                        if (read > 0)
+                        {
+                            if (read != buf.Length) buf = buf.Take(read).ToArray();
+                            ProcessReceivedBytes(buf);
                         }
                     }
                     else
@@ -249,41 +311,44 @@ namespace CareReceiverAgent.Host.Services
             }
         }
 
-        private void ProcessReceivedData(string data)
+        private void ProcessReceivedBytes(byte[] data)
         {
-            _buffer += data;
+            if (data == null || data.Length == 0) return;
+            _rxBuffer.AddRange(data);
 
             // \r로만 구분된 완전한 메시지 처리 (\n은 무시)
-            while (_buffer.Contains("\r"))
+            while (true)
             {
-                int crIndex = _buffer.IndexOf('\r');
+                int crIndex = _rxBuffer.IndexOf(0x0d);
+                if (crIndex < 0) break;
 
-                if (crIndex >= 0)
-                {
-                    string line = _buffer.Substring(0, crIndex).Trim();
-                    // \r 제거 (뒤에 \n이 있어도 무시)
-                    _buffer = _buffer.Substring(crIndex + 1);
-                    // \n이 있으면 제거 (버퍼 시작 부분의 \n 제거)
-                    _buffer = _buffer.TrimStart('\n');
+                var lineBytes = _rxBuffer.Take(crIndex).ToArray();
+                // consume [0..crIndex] (including \r)
+                _rxBuffer.RemoveRange(0, crIndex + 1);
+                // optional \n consume
+                while (_rxBuffer.Count > 0 && _rxBuffer[0] == 0x0a) _rxBuffer.RemoveAt(0);
 
-                    if (!string.IsNullOrEmpty(line))
-                    {
-                        // RX 로그 기록
-                        WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] RX: {line}");
-                        DataReceived?.Invoke(this, line);
-                    }
-                }
-                else
+                string line = Encoding.ASCII.GetString(lineBytes).Trim();
+                if (!string.IsNullOrEmpty(line))
                 {
-                    break;
+                    // RX 로그 기록 (ASCII + HEX)
+                    var frameBytes = new byte[lineBytes.Length + 1];
+                    Array.Copy(lineBytes, 0, frameBytes, 0, lineBytes.Length);
+                    frameBytes[frameBytes.Length - 1] = 0x0d; // \r
+                    WriteLogFrame("RX", frameBytes);
+
+                    // 신규 프로토콜: <sn>.ok 수신 시 sn 획득 및 seed pending 처리
+                    TryHandleSerialOk(line);
+
+                    DataReceived?.Invoke(this, line);
                 }
             }
             
             // 버퍼가 너무 크면 초기화 (무한 증가 방지)
-            if (_buffer.Length > 4096)
+            if (_rxBuffer.Count > 4096)
             {
-                System.Diagnostics.Debug.WriteLine($"버퍼 크기 초과, 초기화: {_buffer.Length}");
-                _buffer = string.Empty;
+                System.Diagnostics.Debug.WriteLine($"버퍼 크기 초과, 초기화: {_rxBuffer.Count}");
+                _rxBuffer.Clear();
             }
         }
 
@@ -298,13 +363,93 @@ namespace CareReceiverAgent.Host.Services
         {
             return _currentLogFile;
         }
+
+        public string NormalizeInboundLine(string line)
+        {
+            // 보안 모드: "<prefix>.<32hex>" 를 "<prefix>.<plain>" 으로 복호화 시도
+            if (SecureEnabled && SessionSeed.HasValue)
+            {
+                var decoded = SecureSerialCodec.TryDecryptLine(line, SessionSeed.Value);
+                if (!string.IsNullOrEmpty(decoded))
+                {
+                    return decoded;
+                }
+            }
+            return line;
+        }
         
         /// <summary>
         /// 테스트용: rx 데이터를 시뮬레이션하여 처리
         /// </summary>
         public void SimulateReceivedData(string data)
         {
-            ProcessReceivedData(data);
+            var bytes = Encoding.ASCII.GetBytes(data ?? string.Empty);
+            ProcessReceivedBytes(bytes);
+        }
+
+        private static string? NormalizeSerial(string? serial)
+        {
+            var s = (serial ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            if (s.Length != 8) return s;
+            return s;
+        }
+
+        private static bool IsEightDigits(string s)
+        {
+            if (s.Length != 8) return false;
+            for (int i = 0; i < 8; i++)
+            {
+                if (s[i] < '0' || s[i] > '9') return false;
+            }
+            return true;
+        }
+
+        private void TryHandleSerialOk(string line)
+        {
+            // "<sn>.ok"
+            int dot = line.IndexOf('.');
+            if (dot <= 0) return;
+            var prefix = line.Substring(0, dot).Trim();
+            var body = line.Substring(dot + 1).Trim();
+            if (!body.Equals("ok", StringComparison.OrdinalIgnoreCase)) return;
+            if (!IsEightDigits(prefix)) return;
+            if (prefix == "00000000") return;
+
+            if (!string.Equals(CurrentSerialNumber, prefix, StringComparison.Ordinal))
+            {
+                CurrentSerialNumber = prefix;
+                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] device serial detected: {CurrentSerialNumber}");
+            }
+
+            if (SecureEnabled && SessionSeed.HasValue && !string.IsNullOrEmpty(_pendingSeedMark))
+            {
+                var mark = _pendingSeedMark;
+                _pendingSeedMark = null;
+                SendCommand($"{CurrentSerialNumber}.seed={mark}");
+            }
+        }
+
+        private void WriteLogFrame(string dir, byte[] bytes)
+        {
+            if (bytes == null) return;
+            var hex = string.Join(" ", bytes.Select(b => b.ToString("x2")));
+            var ascii = ToPrintableAscii(bytes);
+            WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {dir} ascii=\"{ascii}\" hex={hex}");
+        }
+
+        private static string ToPrintableAscii(byte[] bytes)
+        {
+            var sb = new StringBuilder(bytes.Length);
+            foreach (var b in bytes)
+            {
+                if (b >= 0x20 && b <= 0x7e) sb.Append((char)b);
+                else if (b == 0x0d) sb.Append("\\r");
+                else if (b == 0x0a) sb.Append("\\n");
+                else if (b == 0x09) sb.Append("\\t");
+                else sb.Append('.');
+            }
+            return sb.ToString();
         }
     }
 }

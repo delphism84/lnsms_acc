@@ -57,6 +57,7 @@ namespace CareReceiverAgent.Host.Controllers
             
             phrase.Id = 0;
             phrase.BellCodes = NormalizeBellCodes(phrase.BellCodes);
+            phrase.ImageUrl = string.IsNullOrWhiteSpace(phrase.ImageUrl) ? null : phrase.ImageUrl.Trim();
             
             // 기본 벨 코드는 다른 문구에 할당 불가
             const string defaultBellCode = "crcv.assist";
@@ -108,6 +109,11 @@ namespace CareReceiverAgent.Host.Controllers
             existing.IsEnabled = phrase.IsEnabled;
             existing.Color = phrase.Color;
             existing.BellCodes = bellCodes;
+            existing.AutoCloseEnabled = phrase.AutoCloseEnabled;
+            existing.AutoCloseSeconds = phrase.AutoCloseSeconds;
+            existing.ImageUrl = string.IsNullOrWhiteSpace(phrase.ImageUrl) ? null : phrase.ImageUrl.Trim();
+            existing.MakerId = phrase.MakerId;
+            existing.ModelId = phrase.ModelId;
             existing.UpdatedAt = DateTime.Now;
             
             JsonDatabaseService.SavePhrases(database);

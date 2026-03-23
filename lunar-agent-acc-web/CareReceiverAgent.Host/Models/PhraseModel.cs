@@ -17,6 +17,9 @@ namespace CareReceiverAgent.Host.Models
         private bool _isEnabled = true;
         private string _color = "#FF0000";
         private List<string> _bellCodes = new List<string>();
+        private bool _autoCloseEnabled = false;
+        private int _autoCloseSeconds = 10;
+        private string? _imageUrl = null;
         private DateTime _createdAt = DateTime.Now;
         private DateTime _updatedAt = DateTime.Now;
 
@@ -140,6 +143,55 @@ namespace CareReceiverAgent.Host.Models
         }
 
         public int BellCount => BellCodes?.Count ?? 0;
+
+        // 문구별 자동꺼짐
+        public bool AutoCloseEnabled
+        {
+            get => _autoCloseEnabled;
+            set
+            {
+                if (_autoCloseEnabled != value)
+                {
+                    _autoCloseEnabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public int AutoCloseSeconds
+        {
+            get => _autoCloseSeconds;
+            set
+            {
+                var v = value;
+                if (v < 1) v = 1;
+                if (v > 3600) v = 3600;
+                if (_autoCloseSeconds != v)
+                {
+                    _autoCloseSeconds = v;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        // 문구별 이미지 URL (예: "/images/xxx.png")
+        public string? ImageUrl
+        {
+            get => _imageUrl;
+            set
+            {
+                if (_imageUrl != value)
+                {
+                    _imageUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>호출벨 회사(메이커) ID. 추후 BE에서 관리, 현재는 기본 필백 목록 사용.</summary>
+        public string? MakerId { get; set; }
+        /// <summary>호출벨 모델 ID.</summary>
+        public string? ModelId { get; set; }
     }
 
     /// <summary>
@@ -155,11 +207,28 @@ namespace CareReceiverAgent.Host.Models
         }
     }
 
-    public class SerialSettings
+    /// <summary>
+    /// 등록된 시리얼 포트 1개 항목 (다중 포트 지원)
+    /// </summary>
+    public class SerialPortEntry
     {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string PortName { get; set; } = "COM1";
         public int BaudRate { get; set; } = 9600;
         public bool AutoConnect { get; set; } = true;
+        public bool SecureEnabled { get; set; } = false;
+        /// <summary>
+        /// UART 프로토콜 v4: 8자리 시리얼(prefix). 모를 경우 "00000000"로 통신 체크를 보냄.
+        /// </summary>
+        public string DeviceSerialNumber { get; set; } = "00000000";
+    }
+
+    /// <summary>
+    /// 시리얼 포트 설정 (다중 포트 목록)
+    /// </summary>
+    public class SerialSettings
+    {
+        public List<SerialPortEntry> Ports { get; set; } = new List<SerialPortEntry>();
     }
 }
 

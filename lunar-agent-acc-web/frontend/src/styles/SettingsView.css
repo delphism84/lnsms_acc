@@ -1,9 +1,83 @@
 .settings-view {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   height: 100%;
   background-color: #F2F2F7;
   overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.settings-appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.appbar-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.appbar-active-setid {
+  margin-left: 12px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.appbar-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.appbar-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.appbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+.settings-login-modal .modal-content,
+.settings-transfer-modal .modal-content {
+  max-width: 400px;
+}
+
+.transfer-hint {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #3C3C43;
+}
+
+.transfer-warning {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #FF3B30;
+  font-weight: 500;
 }
 
 .settings-header {
@@ -117,13 +191,19 @@
 
 .settings-section {
   background-color: #FFFFFF;
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: 16px;
+  padding: 24px;
   margin-bottom: 20px;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.settings-section.remote-section {
+  flex: 1.2;
+  min-height: 420px;
 }
 
 .section-header {
@@ -135,9 +215,10 @@
 
 .section-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  color: #000000;
+  color: #1C1C1E;
+  letter-spacing: -0.02em;
 }
 
 .add-button,
@@ -321,7 +402,8 @@
 
 .bell-add-button,
 .notification-test-button,
-.tts-test-button {
+.tts-test-button,
+.broadcast-button {
   padding: 6px 12px;
   font-size: 13px;
   font-weight: 500;
@@ -346,16 +428,120 @@
   color: #FFFFFF;
 }
 
+.broadcast-button {
+  background-color: #34C759;
+  color: #FFFFFF;
+}
+
 .bell-add-button:hover,
 .notification-test-button:hover,
-.tts-test-button:hover {
+.tts-test-button:hover,
+.broadcast-button:hover {
   opacity: 0.8;
 }
 
 .bell-add-button:disabled,
 .notification-test-button:disabled,
-.tts-test-button:disabled {
+.tts-test-button:disabled,
+.broadcast-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.remote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.remote-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.remote-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.remote-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.remote-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.remote-item {
+  display: grid;
+  grid-template-columns: 220px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background-color: #F2F2F7;
+  border-radius: 8px;
+  min-height: 48px;
+}
+
+.remote-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.remote-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #E5E5EA;
+  color: #1C1C1E;
+  font-weight: 700;
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.remote-name {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #E5E5EA;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.remote-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #1C1C1E;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.remote-code-empty {
+  color: #8E8E93;
+}
+
+.remote-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
 }
 

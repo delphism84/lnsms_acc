@@ -6,10 +6,16 @@ namespace CareReceiverAgent.Host.Controllers
     [Route("api/[controller]")]
     public class WindowController : ControllerBase
     {
+        private readonly Services.NotificationQueueService _queue;
         private static bool _isSettingsView = false;
         private static bool _testFlagEnabled = false;
         private static bool _isBellAddModalOpen = false;
         private static readonly object _lock = new object();
+
+        public WindowController(Services.NotificationQueueService queue)
+        {
+            _queue = queue;
+        }
 
         [HttpPost("hide")]
         public ActionResult HideWindow()
@@ -24,6 +30,12 @@ namespace CareReceiverAgent.Host.Controllers
             lock (_lock)
             {
                 _isSettingsView = request.view == "settings";
+            }
+
+            // 설정 -> 알림으로 돌아오면, 대기 중인 알림 1개를 표시(있으면)
+            if (request.view == "notification")
+            {
+                _queue.TryShowCurrentAsync().GetAwaiter().GetResult();
             }
             return Ok(new { success = true, view = request.view });
         }

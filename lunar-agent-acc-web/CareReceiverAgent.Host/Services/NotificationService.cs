@@ -53,7 +53,10 @@ namespace CareReceiverAgent.Host.Services
                     Color = phrase.Color,
                     Type = "bell",
                     IsRegistered = true,
-                    Uid = phrase.Uid
+                    Uid = phrase.Uid,
+                    AutoCloseEnabled = phrase.AutoCloseEnabled,
+                    AutoCloseSeconds = phrase.AutoCloseSeconds,
+                    ImageUrl = phrase.ImageUrl
                 };
             }
             else
@@ -94,6 +97,9 @@ namespace CareReceiverAgent.Host.Services
         public string Type { get; set; } = "bell";
         public bool IsRegistered { get; set; } = false;
         public string? Uid { get; set; }
+        public bool AutoCloseEnabled { get; set; } = false;
+        public int AutoCloseSeconds { get; set; } = 10;
+        public string? ImageUrl { get; set; }
     }
 }
 

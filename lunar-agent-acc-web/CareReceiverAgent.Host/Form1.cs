@@ -2,6 +2,7 @@ using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Web.WebView2.Core;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace CareReceiverAgent.Host;
 
@@ -9,6 +10,7 @@ public partial class Form1 : Form
 {
     private WebView2? _webView;
     private string _backendUrl;
+    private readonly string _lnsmsApiBase;
     private NotifyIcon? _notifyIcon;
     private bool _isClosing = false;
     private static Form1? _instance;
@@ -25,18 +27,22 @@ public partial class Form1 : Form
         _instance = this;
         
         InitializeComponent();
-        
+
+        // 런타임 설정(app.json) 로드
+        var cfg = Services.AppRuntimeConfig.Load();
+        _lnsmsApiBase = string.IsNullOrWhiteSpace(cfg.LnsmsApiBase)
+            ? "http://localhost:60000"
+            : cfg.LnsmsApiBase.Trim();
+
         // 창 제목 설정
-        this.Text = "장애인 도움요청 시스팀";
-        
-        // 초기에는 창을 숨김
-        this.WindowState = FormWindowState.Minimized;
-        this.ShowInTaskbar = false;
-        
+        this.Text = cfg.Title;
+
+        // 초기에는 알림창을 띄움(요구사항)
+        this.WindowState = FormWindowState.Normal;
+        this.ShowInTaskbar = true;
+
         InitializeTrayIcon();
         InitializeWebView();
-        
-        this.Hide();
     }
     
     private void Form1_Paint(object sender, PaintEventArgs e)
@@ -138,9 +144,12 @@ public partial class Form1 : Form
                 this.components = new System.ComponentModel.Container();
             }
 
-            // 아이콘 파일 로드
+            // 아이콘 파일 로드 (resource/appicon.ico 우선, 없으면 app.ico, 마지막으로 기본 아이콘)
             Icon? trayIcon = null;
-            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+            var resourceIcoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resource", "appicon.ico");
+            var fallbackIcoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+            var iconPath = File.Exists(resourceIcoPath) ? resourceIcoPath : fallbackIcoPath;
+
             if (File.Exists(iconPath))
             {
                 try
@@ -156,8 +165,18 @@ public partial class Form1 : Form
             _notifyIcon = new NotifyIcon(this.components)
             {
                 Icon = trayIcon ?? SystemIcons.Application,
-                Text = "장애인 도움요청 시스팀"
+                Text = Services.AppRuntimeConfig.Load().Title
             };
+
+            // 폼 아이콘도 동일하게 설정
+            try
+            {
+                this.Icon = trayIcon ?? SystemIcons.Application;
+            }
+            catch
+            {
+                // ignore
+            }
 
             // 컨텍스트 메뉴 생성
             var contextMenu = new ContextMenuStrip();
@@ -186,17 +205,17 @@ public partial class Form1 : Form
 
     private void ShowWindow()
     {
-        // 항상 Normal 상태로 복원
+        // 설정 창: 리사이즈 가능, 기본 1200x800
+        this.FormBorderStyle = FormBorderStyle.Sizable;
+        this.ClientSize = new Size(1200, 800);
+        this.MaximizeBox = true;
+        this.MinimizeBox = true;
+
         this.WindowState = FormWindowState.Normal;
-        
         this.Show();
         this.ShowInTaskbar = true;
         this.Activate();
-        
-        // 모니터 중앙에 배치
         CenterToScreen();
-        
-        // 기능 설정 페이지로 이동 (기본 페이지)
         NavigateToSettings();
     }
 
@@ -226,8 +245,10 @@ public partial class Form1 : Form
     {
         _webView = new WebView2
         {
-            Dock = DockStyle.Fill
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
         };
+        Padding = Padding.Empty;
         Controls.Add(_webView);
 
         _webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
@@ -237,7 +258,7 @@ public partial class Form1 : Form
         _webView.EnsureCoreWebView2Async();
     }
 
-    private void WebView_CoreWebView2InitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
+    private async void WebView_CoreWebView2InitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
     {
         if (e.IsSuccess && _webView?.CoreWebView2 != null)
         {
@@ -257,6 +278,11 @@ public partial class Form1 : Form
             
             // 웹 메시지 처리
             _webView.CoreWebView2.WebMessageReceived += WebView_WebMessageReceived;
+
+            // React(lnmsApi)가 Node LNSMS 백엔드로 로그인·설정 동기화할 때 사용하는 베이스 URL
+            var baseJson = JsonSerializer.Serialize(_lnsmsApiBase);
+            await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+                $"(function(){{ try {{ window.__LNSMS_API__ = {baseJson}; }} catch (e) {{}} }})();");
             
             // 백엔드 URL로 이동
             NavigateToBackend();
@@ -354,6 +380,7 @@ public partial class Form1 : Form
         
         if (_webView?.CoreWebView2 != null)
         {
+            // 기본 시작은 알림 화면
             _webView.CoreWebView2.Navigate(_backendUrl);
         }
     }
