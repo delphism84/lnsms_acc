@@ -1,4 +1,5 @@
-const API = process.env.NEXT_PUBLIC_LNSMS_API || 'http://localhost:60000';
+/** 운영 BE: admin.necall.com (로컬은 .env.local 로 localhost 지정) */
+const API = process.env.NEXT_PUBLIC_LNSMS_API || 'https://admin.necall.com';
 
 /** setid.md 규격 문구 */
 export interface PhraseItem {

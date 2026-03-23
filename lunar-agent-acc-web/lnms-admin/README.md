@@ -4,7 +4,7 @@
 
 - **유저/매장 관리**: 좌측 트리 (userid → storeid → setid), 세트 ID 추가/삭제
 - **우측**: 세트 선택 시 상단 앱바(세트 ID, 저장/삭제) + 탭 (문구관리, RF모듈관리(COM·TCP), 설정관리)
-- API 베이스 URL: 환경변수 **`NEXT_PUBLIC_LNSMS_API`** (미설정 시 기본 `http://localhost:60000`)
+- API 베이스 URL: 환경변수 **`NEXT_PUBLIC_LNSMS_API`** (미설정 시 기본 **`https://admin.necall.com`**)
 
 ## 환경 변수 (필수)
 
