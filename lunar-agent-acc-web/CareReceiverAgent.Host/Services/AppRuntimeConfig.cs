@@ -17,8 +17,11 @@ namespace CareReceiverAgent.Host.Services
         public string QaUserId { get; set; } = "qa-user-001";
         /// <summary>QA 검수용 매장 ID (표시/연동용).</summary>
         public string QaStoreId { get; set; } = "qa-store-001";
-        /// <summary>LNSMS(Node) API 베이스 URL. 봇: 로그인·다운로드용.</summary>
+        /// <summary>로컬 LNSMS(Node) API. 에이전트·WebView: 로그인·다운로드·브로드캐스트 등 (기본 localhost:60000, app.json로 변경).</summary>
         public string LnsmsApiBase { get; set; } = "http://localhost:60000";
+
+        /// <summary>운영 업로드 전용 LNSMS URL. 설정 업로드(세트 PUT/POST)만 이 주소로 호출 (기본 https://admin.necall.com).</summary>
+        public string LnsmsRemoteUploadBase { get; set; } = "https://admin.necall.com";
 
         public static AppRuntimeConfig Load()
         {

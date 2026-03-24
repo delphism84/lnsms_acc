@@ -11,6 +11,7 @@ public partial class Form1 : Form
     private WebView2? _webView;
     private string _backendUrl;
     private readonly string _lnsmsApiBase;
+    private readonly string _lnsmsRemoteUploadBase;
     private NotifyIcon? _notifyIcon;
     private bool _isClosing = false;
     private static Form1? _instance;
@@ -33,6 +34,9 @@ public partial class Form1 : Form
         _lnsmsApiBase = string.IsNullOrWhiteSpace(cfg.LnsmsApiBase)
             ? "http://localhost:60000"
             : cfg.LnsmsApiBase.Trim();
+        _lnsmsRemoteUploadBase = string.IsNullOrWhiteSpace(cfg.LnsmsRemoteUploadBase)
+            ? "https://admin.necall.com"
+            : cfg.LnsmsRemoteUploadBase.Trim();
 
         // 창 제목 설정
         this.Text = cfg.Title;
@@ -279,10 +283,11 @@ public partial class Form1 : Form
             // 웹 메시지 처리
             _webView.CoreWebView2.WebMessageReceived += WebView_WebMessageReceived;
 
-            // React(lnmsApi)가 Node LNSMS 백엔드로 로그인·설정 동기화할 때 사용하는 베이스 URL
-            var baseJson = JsonSerializer.Serialize(_lnsmsApiBase);
+            // 로컬 LNSMS(로그인·다운로드·브로드캐스트) / 원격은 설정 업로드(세트 저장) 전용
+            var localJson = JsonSerializer.Serialize(_lnsmsApiBase);
+            var remoteJson = JsonSerializer.Serialize(_lnsmsRemoteUploadBase);
             await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
-                $"(function(){{ try {{ window.__LNSMS_API__ = {baseJson}; }} catch (e) {{}} }})();");
+                $"(function(){{ try {{ window.__LNSMS_API__ = {localJson}; window.__LNSMS_REMOTE_API__ = {remoteJson}; }} catch (e) {{}} }})();");
             
             // 백엔드 URL로 이동
             NavigateToBackend();

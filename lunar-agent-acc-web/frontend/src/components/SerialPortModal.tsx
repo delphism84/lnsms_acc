@@ -32,6 +32,15 @@ interface PortStatusItem {
   lastError?: string;
 }
 
+type PortFormState = {
+  id?: string;
+  portName: string;
+  baudRate: number;
+  autoConnect: boolean;
+  secureEnabled: boolean;
+  deviceSerialNumber: string;
+};
+
 function SerialPortModal({ onClose }: SerialPortModalProps) {
   const [ports, setPorts] = useState<SerialPortEntry[]>([]);
   const [statusList, setStatusList] = useState<PortStatusItem[]>([]);
@@ -44,7 +53,14 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ portName: 'COM1', baudRate: 9600, autoConnect: true });
+  const [editingPortId, setEditingPortId] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState<PortFormState>({
+    portName: 'COM1',
+    baudRate: 9600,
+    autoConnect: true,
+    secureEnabled: false,
+    deviceSerialNumber: '00000000'
+  });
   const [scanBaudRate, setScanBaudRate] = useState(9600);
 
   const loadSettings = async () => {
@@ -275,28 +291,64 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
     setLoading(true);
     try {
       const apiUrl = await getApiBaseUrl();
-      const res = await fetch(`${apiUrl}/api/serialport/ports`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          portName: addForm.portName,
-          baudRate: addForm.baudRate,
-          autoConnect: addForm.autoConnect,
-          secureEnabled: false,
-          deviceSerialNumber: '00000000'
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || '추가 실패');
+      if (editingPortId) {
+        setPorts(prev => prev.map(p => (
+          p.id === editingPortId
+            ? {
+              ...p,
+              portName: addForm.portName.trim(),
+              baudRate: addForm.baudRate,
+              autoConnect: addForm.autoConnect,
+              secureEnabled: addForm.secureEnabled,
+              deviceSerialNumber: addForm.deviceSerialNumber.trim() || '00000000'
+            }
+            : p
+        )));
+      } else {
+        const res = await fetch(`${apiUrl}/api/serialport/ports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            portName: addForm.portName,
+            baudRate: addForm.baudRate,
+            autoConnect: addForm.autoConnect,
+            secureEnabled: addForm.secureEnabled,
+            deviceSerialNumber: addForm.deviceSerialNumber.trim() || '00000000'
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || '추가 실패');
+        }
+        await loadSettings();
       }
       setShowAddModal(false);
-      await loadSettings();
+      setEditingPortId(null);
+      setAddForm({ portName: 'COM1', baudRate: 9600, autoConnect: true, secureEnabled: false, deviceSerialNumber: '00000000' });
     } catch (e: unknown) {
-      await showCustomAlert(e instanceof Error ? e.message : 'COM 추가에 실패했습니다.');
+      await showCustomAlert(e instanceof Error ? e.message : 'COM 저장에 실패했습니다.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const openAddModal = () => {
+    setEditingPortId(null);
+    setAddForm({ portName: 'COM1', baudRate: 9600, autoConnect: true, secureEnabled: false, deviceSerialNumber: '00000000' });
+    setShowAddModal(true);
+  };
+
+  const openEditModal = (entry: SerialPortEntry) => {
+    setEditingPortId(entry.id);
+    setAddForm({
+      id: entry.id,
+      portName: entry.portName,
+      baudRate: entry.baudRate ?? 9600,
+      autoConnect: entry.autoConnect ?? true,
+      secureEnabled: entry.secureEnabled ?? false,
+      deviceSerialNumber: entry.deviceSerialNumber ?? '00000000'
+    });
+    setShowAddModal(true);
   };
 
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -335,7 +387,7 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
             <button type="button" className="connect-button" onClick={handleAutoScanAndAdd} disabled={loading}>
               자동 검색 후 통과 COM 모두 추가
             </button>
-            <button type="button" className="save-button" onClick={() => setShowAddModal(true)} disabled={loading}>
+            <button type="button" className="save-button" onClick={openAddModal} disabled={loading}>
               수동 COM 추가
             </button>
             <button type="button" className="log-button" onClick={() => setShowPasswordDialog(true)}>로그</button>
@@ -345,6 +397,9 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
             <div className="serial-port-list-header">
               <span>등록된 COM</span>
               <span>Baud</span>
+              <span>자동연결</span>
+              <span>보안</span>
+              <span>단말 시리얼</span>
               <span>상태</span>
               <span>동작</span>
             </div>
@@ -357,10 +412,14 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
                   <div key={entry.id} className="serial-port-row">
                     <span className="port-name">{entry.portName}</span>
                     <span className="port-baud">{entry.baudRate}</span>
+                    <span className="port-auto-connect">{entry.autoConnect ? '예' : '아니오'}</span>
+                    <span className="port-secure-enabled">{entry.secureEnabled ? '예' : '아니오'}</span>
+                    <span className="port-device-sn">{entry.deviceSerialNumber || '00000000'}</span>
                     <span className={`port-status ${connected ? 'connected' : 'disconnected'}`}>
                       {connected ? '✓ 연결됨' : '✗ 해제'}
                     </span>
                     <span className="port-actions">
+                      <button type="button" className="edit-button small" onClick={() => openEditModal(entry)} disabled={loading}>수정</button>
                       {connected ? (
                         <button type="button" className="disconnect-button small" onClick={() => handleDisconnect(entry.portName)} disabled={loading}>해제</button>
                       ) : (
@@ -403,11 +462,11 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
       )}
 
       {showAddModal && (
-        <div className="modal-overlay serial-add-overlay" onClick={() => setShowAddModal(false)}>
+        <div className="modal-overlay serial-add-overlay" onClick={() => { setShowAddModal(false); setEditingPortId(null); }}>
           <div className="modal-content serial-add-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>수동 COM 추가</h2>
-              <button className="modal-close" onClick={() => setShowAddModal(false)}>×</button>
+              <h2>{editingPortId ? 'COM 수정' : '수동 COM 추가'}</h2>
+              <button className="modal-close" onClick={() => { setShowAddModal(false); setEditingPortId(null); }}>×</button>
             </div>
             <div className="modal-form">
               <div className="form-group">
@@ -438,9 +497,25 @@ function SerialPortModal({ onClose }: SerialPortModalProps) {
                   자동 연결
                 </label>
               </div>
+              <div className="form-group">
+                <label>
+                  <input type="checkbox" checked={addForm.secureEnabled} onChange={e => setAddForm(f => ({ ...f, secureEnabled: e.target.checked }))} />
+                  보안(암호화) 사용
+                </label>
+              </div>
+              <div className="form-group">
+                <label>단말 시리얼번호 (8자)</label>
+                <input
+                  type="text"
+                  value={addForm.deviceSerialNumber}
+                  onChange={e => setAddForm(f => ({ ...f, deviceSerialNumber: e.target.value }))}
+                  placeholder="00000000"
+                  maxLength={8}
+                />
+              </div>
               <div className="modal-actions">
-                <button type="button" className="cancel-button" onClick={() => setShowAddModal(false)}>취소</button>
-                <button type="button" className="save-button" onClick={handleAddPort} disabled={loading}>추가</button>
+                <button type="button" className="cancel-button" onClick={() => { setShowAddModal(false); setEditingPortId(null); }}>취소</button>
+                <button type="button" className="save-button" onClick={handleAddPort} disabled={loading}>{editingPortId ? '수정 반영' : '추가'}</button>
               </div>
             </div>
           </div>
