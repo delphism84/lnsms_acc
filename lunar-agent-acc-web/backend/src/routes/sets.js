@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-/** GET /api/sets/:setid/config - 세트 설정 (DB·로컬 1:1). setid, phrases, serial 만 반환. phrase.image = 파일명 보장 */
+/** GET /api/sets/:setid/config - 세트 설정 (DB·로컬 1:1). setid, phrases, serial, remoteControl 반환. */
 router.get('/:setid/config', async (req, res) => {
   try {
     const setid = req.params.setid;
@@ -35,6 +35,7 @@ router.get('/:setid/config', async (req, res) => {
       setid: doc.setid,
       phrases,
       serial: doc.serial || { ports: [] },
+      remoteControl: doc.remoteControl || { buttons: [] },
     });
   } catch (err) {
     console.error('GET /api/sets/:setid/config', err);
@@ -54,12 +55,12 @@ function normalizePhraseImage(phrase) {
   return p;
 }
 
-/** PUT /api/sets/:setid - 세트 설정 저장. body: { setid?, phrases, serial } (1:1, storeid 없음). phrase.image = 파일명으로 정규화 */
+/** PUT /api/sets/:setid - 세트 설정 저장. body: { setid?, phrases, serial, remoteControl } */
 router.put('/:setid', async (req, res) => {
   try {
     const setid = req.params.setid?.trim();
     if (!setid) return res.status(400).json({ success: false, message: 'setid 필요' });
-    const { phrases, serial } = req.body || {};
+    const { phrases, serial, remoteControl } = req.body || {};
     const coll = getAgentSetsCollection();
     const existing = await coll.findOne({ setid });
     if (!existing) return res.status(404).json({ success: false, message: '세트 없음' });
@@ -70,6 +71,9 @@ router.put('/:setid', async (req, res) => {
       userid: existing.userid,
       phrases: normalizedPhrases,
       serial: serial && typeof serial === 'object' ? serial : (existing.serial || { ports: [] }),
+      remoteControl: remoteControl && typeof remoteControl === 'object'
+        ? remoteControl
+        : (existing.remoteControl || { buttons: [] }),
       updatedAt: new Date(),
     };
     await coll.updateOne({ setid }, { $set: doc });
@@ -102,6 +106,7 @@ router.post('/', async (req, res) => {
       userid: uid,
       phrases: [],
       serial: { ports: [] },
+      remoteControl: { buttons: [] },
       updatedAt: new Date(),
     });
     return res.status(201).json({ setid: id, userid: uid });

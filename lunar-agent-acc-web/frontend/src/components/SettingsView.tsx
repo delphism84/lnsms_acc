@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getPhrases, createPhrase, updatePhrase, deletePhrase } from '../services/phrases';
 import type { Phrase } from '../services/phrases';
 import { getApiBaseUrl } from '../services/api';
@@ -11,12 +11,47 @@ import SerialPortModal from './SerialPortModal';
 import BellAddModal from './BellAddModal';
 import '../styles/SettingsView.css';
 
+/** 에이전트: 로그인 성공 시 저장 → 다음부터 자동 로그인 */
+const LNSMS_AGENT_AUTO_LOGIN_KEY = 'lnsms_agent_auto_login';
+
+type SavedAgentLogin = { userid: string; userpw: string };
+
+function loadSavedAgentLogin(): SavedAgentLogin | null {
+  try {
+    const raw = localStorage.getItem(LNSMS_AGENT_AUTO_LOGIN_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof o.userid === 'string' && typeof o.userpw === 'string' && o.userid.trim()) {
+      return { userid: o.userid.trim(), userpw: o.userpw };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveAgentAutoLogin(userid: string, userpw: string) {
+  try {
+    localStorage.setItem(LNSMS_AGENT_AUTO_LOGIN_KEY, JSON.stringify({ userid: userid.trim(), userpw }));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearAgentAutoLogin() {
+  try {
+    localStorage.removeItem(LNSMS_AGENT_AUTO_LOGIN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 interface SettingsTransferModalProps {
   mode: 'download' | 'upload';
   onClose: () => void;
   onDownloadApply: (setid: string) => Promise<void>;
-  onUploadSave: (setid: string, isNew: boolean, config: { phrases: unknown[]; serial: { ports: unknown[] } }) => Promise<void>;
-  currentConfig?: { phrases: unknown[]; serial: { ports: unknown[] } } | null;
+  onUploadSave: (setid: string, isNew: boolean, config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } }) => Promise<void>;
+  currentConfig?: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null;
   /** 다운로드 시: 지정 시 해당 매장에 연결된 세트ID만 표시 */
   storeid?: string | null;
   /** 업로드 시 신규 세트 생성에 사용할 userid */
@@ -48,7 +83,9 @@ function SettingsTransferModal({
           const store = await lnms.lnmsGetStore(storeid);
           if (!cancelled) setSetList((store.setids || []).map(sid => ({ setid: sid })));
         } else {
-          const list = await lnms.lnmsListSets(userid || undefined);
+          const list = await lnms.lnmsListSets(userid || undefined, {
+            useRemote: mode === 'upload',
+          });
           if (!cancelled) setSetList(Array.isArray(list) ? list : []);
         }
       } catch (e) {
@@ -201,9 +238,50 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [storesForUser, setStoresForUser] = useState<lnms.StoreInfo[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] } } | null>(null);
+  const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null>(null);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [remoteButtons, setRemoteButtons] = useState<RemoteButton[]>([]);
+
+  const completeLogin = useCallback(async (uid: string, clearPwField: boolean) => {
+    setIsLoggedIn(true);
+    setLoginId(uid);
+    if (clearPwField) setLoginPw('');
+    setShowLoginModal(false);
+    try {
+      const list = await lnms.lnmsGetStores(uid.trim());
+      const arr = Array.isArray(list) ? list : [];
+      setStoresForUser(arr);
+      setSelectedStoreId((prev) => {
+        if (arr.length === 0) return null;
+        if (prev && arr.some((s) => s.storeid === prev)) return prev;
+        return arr[0].storeid;
+      });
+    } catch {
+      setStoresForUser([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = loadSavedAgentLogin();
+      if (!saved) return;
+      try {
+        const ok = await lnms.lnmsLogin(saved.userid, saved.userpw);
+        if (cancelled) return;
+        if (ok.success) {
+          await completeLogin(saved.userid, true);
+        } else {
+          clearAgentAutoLogin();
+        }
+      } catch {
+        if (!cancelled) clearAgentAutoLogin();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [completeLogin]);
 
   useEffect(() => {
     loadPhrases();
@@ -656,14 +734,8 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
     try {
       const ok = await lnms.lnmsLogin(uid, pw);
       if (ok.success) {
-        setIsLoggedIn(true);
-        setShowLoginModal(false);
-        setLoginPw('');
-        if (storesForUser.length > 0 && selectedStoreId) {
-          // keep selectedStoreId
-        } else if (storesForUser.length > 0) {
-          setSelectedStoreId(storesForUser[0].storeid);
-        }
+        saveAgentAutoLogin(uid, pw);
+        await completeLogin(uid, true);
       } else {
         await showCustomAlert('아이디 또는 비밀번호가 올바르지 않습니다.');
       }
@@ -673,9 +745,12 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   };
 
   const handleLogout = () => {
+    clearAgentAutoLogin();
     setIsLoggedIn(false);
     setSelectedStoreId(null);
     setStoresForUser([]);
+    setLoginId('');
+    setLoginPw('');
   };
 
   const handleDownloadSettings = () => {
@@ -707,16 +782,19 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
     }
     try {
       const apiUrl = await getApiBaseUrl();
-      const [phrasesRes, serialRes] = await Promise.all([
+      const [phrasesRes, serialRes, remoteRes] = await Promise.all([
         fetch(`${apiUrl}/api/phrases`),
         fetch(`${apiUrl}/api/serialport/settings`),
+        fetch(`${apiUrl}/api/remotecontrol/buttons`),
       ]);
-      if (!phrasesRes.ok || !serialRes.ok) throw new Error('설정 조회 실패');
+      if (!phrasesRes.ok || !serialRes.ok || !remoteRes.ok) throw new Error('설정 조회 실패');
       const phrasesData = await phrasesRes.json();
       const serialData = await serialRes.json();
+      const remoteData = await remoteRes.json();
       setUploadConfig({
         phrases: phrasesData.phrases || [],
         serial: { ports: serialData.ports || [] },
+        remoteControl: { buttons: remoteData.buttons || [] },
       });
       setShowUploadModal(true);
     } catch (e) {
@@ -1040,11 +1118,17 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
             const res = await fetch(`${apiUrl}/api/settingsapply`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ setid, phrases: config.phrases, serial: config.serial }),
+              body: JSON.stringify({
+                setid,
+                phrases: config.phrases,
+                serial: config.serial,
+                remoteControl: config.remoteControl || { buttons: [] }
+              }),
             });
             if (!res.ok) throw new Error('설정 적용 실패');
             await loadPhrases();
             await loadActiveSetId();
+            await loadRemoteButtons();
             try {
               await lnms.lnmsRegisterAgent(`${apiUrl.replace(/\/$/, '')}/api/broadcast/receive`, setid, selectedStoreId ?? undefined);
             } catch {
@@ -1073,7 +1157,15 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
                   : null;
               return { ...obj, image: img };
             });
-            await lnms.lnmsSaveSetConfig(setid, { phrases, serial: uploadConfig.serial ?? { ports: [] } }, loginId.trim() || undefined);
+            await lnms.lnmsSaveSetConfig(
+              setid,
+              {
+                phrases,
+                serial: uploadConfig.serial ?? { ports: [] },
+                remoteControl: uploadConfig.remoteControl ?? { buttons: [] }
+              },
+              loginId.trim() || undefined
+            );
             await showCustomAlert(`세트 "${setid}"로 업로드했습니다.`);
           }}
           currentConfig={uploadConfig}

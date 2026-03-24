@@ -1,9 +1,11 @@
 /**
  * Node LNSMS 백엔드 API - 세트 설정 다운로드/업로드
- * 기본은 admin(`lnms-admin`)과 동일하게 60000. Vite: `VITE_LNSMS_API`로 덮어쓰기.
- * WinForms WebView에서는 C#이 `window.__LNSMS_API__`를 주입(app.json `LnsmsApiBase`).
+ *
+ * - 로컬 에이전트: 기본은 자체 구동 BE(`http://localhost:60000`). WinForms가 `window.__LNSMS_API__`로 주입(app.json `LnsmsApiBase`).
+ * - 운영 업로드: 설정을 클라우드로 올릴 때만 `https://admin.necall.com`(또는 `window.__LNSMS_REMOTE_API__` / `VITE_LNSMS_REMOTE_API`).
  */
-const LNSMS_DEFAULT = 'http://localhost:60000';
+const LNSMS_LOCAL_DEFAULT = 'http://localhost:60000';
+const LNSMS_REMOTE_DEFAULT = 'https://admin.necall.com';
 
 function getLnmsBase(): string {
   if (typeof window !== 'undefined') {
@@ -12,7 +14,18 @@ function getLnmsBase(): string {
   }
   const fromVite = import.meta.env.VITE_LNSMS_API;
   if (fromVite) return fromVite;
-  return LNSMS_DEFAULT;
+  return LNSMS_LOCAL_DEFAULT;
+}
+
+/** 설정 업로드·원격 세트 목록(업로드 모달) 전용 */
+function getLnmsRemoteBase(): string {
+  if (typeof window !== 'undefined') {
+    const injected = (window as unknown as { __LNSMS_REMOTE_API__?: string }).__LNSMS_REMOTE_API__;
+    if (injected) return injected;
+  }
+  const fromVite = import.meta.env.VITE_LNSMS_REMOTE_API;
+  if (fromVite) return fromVite;
+  return LNSMS_REMOTE_DEFAULT;
 }
 
 export interface SetItem {
@@ -26,6 +39,7 @@ export interface SetConfig {
   setid: string;
   phrases: unknown[];
   serial: { ports: unknown[] };
+  remoteControl?: { buttons: unknown[] };
 }
 
 export interface StoreInfo {
@@ -45,9 +59,10 @@ export async function lnmsLogin(userid: string, userpw: string): Promise<{ succe
   return { success: !!data.success, userid: data.userid };
 }
 
-/** 유저 종속 세트 목록 (userid 있으면 해당 유저 세트만) */
-export async function lnmsListSets(userid?: string): Promise<SetItem[]> {
-  const url = userid ? `${getLnmsBase()}/api/sets?userid=${encodeURIComponent(userid)}` : `${getLnmsBase()}/api/sets`;
+/** 유저 종속 세트 목록. `useRemote`: 업로드 모달에서만 운영 서버 세트 목록 조회 */
+export async function lnmsListSets(userid?: string, opts?: { useRemote?: boolean }): Promise<SetItem[]> {
+  const base = opts?.useRemote ? getLnmsRemoteBase() : getLnmsBase();
+  const url = userid ? `${base}/api/sets?userid=${encodeURIComponent(userid)}` : `${base}/api/sets`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('세트 목록 조회 실패');
   const data = await res.json();
@@ -78,12 +93,14 @@ export async function lnmsGetSetConfig(setid: string, userid?: string): Promise<
   return res.json();
 }
 
+/** 운영 서버로 세트 설정 저장(업로드) */
 export async function lnmsSaveSetConfig(
   setid: string,
-  config: { phrases: unknown[]; serial: { ports: unknown[] } },
+  config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } },
   userid?: string
 ): Promise<void> {
-  const res = await fetch(`${getLnmsBase()}/api/sets/${encodeURIComponent(setid)}`, {
+  const base = getLnmsRemoteBase();
+  const res = await fetch(`${base}/api/sets/${encodeURIComponent(setid)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userid ? { ...config, userid } : config),
@@ -94,8 +111,10 @@ export async function lnmsSaveSetConfig(
   }
 }
 
+/** 운영 서버에 신규 세트 생성(업로드) */
 export async function lnmsCreateSet(setid: string, userid: string): Promise<void> {
-  const res = await fetch(`${getLnmsBase()}/api/sets`, {
+  const base = getLnmsRemoteBase();
+  const res = await fetch(`${base}/api/sets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ setid, userid }),
