@@ -189,6 +189,35 @@
   flex-direction: column;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.settings-tab {
+  padding: 8px 14px;
+  border: 1px solid #D1D1D6;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #3C3C43;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-tab:hover {
+  border-color: #007AFF;
+  color: #007AFF;
+}
+
+.settings-tab.active {
+  background: #007AFF;
+  border-color: #007AFF;
+  color: #FFFFFF;
+}
+
 .settings-section {
   background-color: #FFFFFF;
   border-radius: 16px;

@@ -220,6 +220,7 @@ type RemoteButton = {
   name: string;
   sendCode: string;
 };
+type SettingsTab = 'phrases' | 'remote';
 
 function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [phrases, setPhrases] = useState<Phrase[]>([]);
@@ -241,6 +242,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null>(null);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [remoteButtons, setRemoteButtons] = useState<RemoteButton[]>([]);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('phrases');
 
   const completeLogin = useCallback(async (uid: string, clearPwField: boolean) => {
     setIsLoggedIn(true);
@@ -875,6 +877,24 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       </div>
 
       <div className="settings-content">
+        <div className="settings-tabs">
+          <button
+            type="button"
+            className={`settings-tab ${activeTab === 'phrases' ? 'active' : ''}`}
+            onClick={() => setActiveTab('phrases')}
+          >
+            문구 관리
+          </button>
+          <button
+            type="button"
+            className={`settings-tab ${activeTab === 'remote' ? 'active' : ''}`}
+            onClick={() => setActiveTab('remote')}
+          >
+            리모콘 설정 (1~15)
+          </button>
+        </div>
+
+        {activeTab === 'phrases' && (
         <div className="settings-section">
           <div className="section-header">
             <h2>문구 관리</h2>
@@ -980,7 +1000,9 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
             )}
           </div>
         </div>
+        )}
 
+        {activeTab === 'remote' && (
         <div className="settings-section remote-section">
           <div className="section-header">
             <h2>리모콘 설정 (1~15)</h2>
@@ -1017,6 +1039,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
             ))}
           </div>
         </div>
+        )}
       </div>
 
       {isPhraseModalOpen && (
