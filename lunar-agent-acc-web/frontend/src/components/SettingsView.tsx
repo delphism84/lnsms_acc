@@ -242,6 +242,9 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null>(null);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [remoteButtons, setRemoteButtons] = useState<RemoteButton[]>([]);
+  const [appTitle, setAppTitle] = useState('');
+  const [notifyTitle, setNotifyTitle] = useState('');
+  const [callTelText, setCallTelText] = useState('');
   const [activeTab, setActiveTab] = useState<SettingsTab>('phrases');
 
   const completeLogin = useCallback(async (uid: string, clearPwField: boolean) => {
@@ -269,7 +272,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       const saved = loadSavedAgentLogin();
       if (!saved) return;
       try {
-        const ok = await lnms.lnmsLogin(saved.userid, saved.userpw);
+        const ok = await lnms.lnmsLogin(saved.userid, saved.userpw, { useRemote: true });
         if (cancelled) return;
         if (ok.success) {
           await completeLogin(saved.userid, true);
@@ -291,6 +294,46 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
     loadActiveSetId();
     loadRemoteButtons();
   }, []);
+
+  const loadAppRuntime = async () => {
+    try {
+      const apiUrl = await getApiBaseUrl();
+      const r = await fetch(`${apiUrl}/api/settings/app`, { signal: AbortSignal.timeout(1000) });
+      if (!r.ok) return;
+      const cfg = await r.json().catch(() => ({}));
+      setAppTitle(String(cfg?.title ?? ''));
+      setNotifyTitle(String(cfg?.notificationTitle ?? ''));
+      setCallTelText(String(cfg?.systemNotifyCallTelText ?? ''));
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    loadAppRuntime();
+  }, []);
+
+  const saveAppRuntime = async () => {
+    try {
+      const apiUrl = await getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/settings/app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: appTitle,
+          notificationTitle: notifyTitle,
+          systemNotifyCallTelText: callTelText,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || '저장 실패');
+      }
+      await showCustomAlert('저장했습니다.');
+    } catch (e) {
+      await showCustomAlert(e instanceof Error ? e.message : '저장 실패');
+    }
+  };
 
   const loadActiveSetId = async () => {
     try {
@@ -734,7 +777,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       return;
     }
     try {
-      const ok = await lnms.lnmsLogin(uid, pw);
+      const ok = await lnms.lnmsLogin(uid, pw, { useRemote: true });
       if (ok.success) {
         saveAgentAutoLogin(uid, pw);
         await completeLogin(uid, true);
@@ -848,6 +891,14 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
         </button>
         <h1>기능 설정</h1>
         <div className="header-actions">
+          <button
+            type="button"
+            className="settings-button"
+            onClick={async () => { await saveAppRuntime(); }}
+            title="앱 타이틀/고객센터 문구 저장"
+          >
+            기본설정 저장
+          </button>
           <button 
             className="serial-port-button"
             onClick={() => setIsSerialPortModalOpen(true)}
@@ -877,6 +928,24 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       </div>
 
       <div className="settings-content">
+        <div className="settings-section">
+          <div className="section-header">
+            <h2>기본 설정</h2>
+          </div>
+          <div className="form-group">
+            <label>앱 타이틀</label>
+            <input type="text" value={appTitle} onChange={e => setAppTitle(e.target.value)} placeholder="장애인도움요청" />
+          </div>
+          <div className="form-group">
+            <label>알림창 타이틀</label>
+            <input type="text" value={notifyTitle} onChange={e => setNotifyTitle(e.target.value)} placeholder="장애인도움요청" />
+          </div>
+          <div className="form-group">
+            <label>고객센터 문구 (알림창 좌측 하단)</label>
+            <input type="text" value={callTelText} onChange={e => setCallTelText(e.target.value)} placeholder="" />
+          </div>
+        </div>
+
         <div className="settings-tabs">
           <button
             type="button"

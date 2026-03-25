@@ -4,8 +4,10 @@ namespace CareReceiverAgent.Host.Services
 {
     public class AppRuntimeConfig
     {
-        public string Title { get; set; } = "장애인알림시스템";
-        public string NotificationTitle { get; set; } = "장애인 도움 요청";
+        public string Title { get; set; } = "장애인도움요청";
+        public string NotificationTitle { get; set; } = "장애인도움요청";
+        /// <summary>알림창 좌측 하단 고객센터 문구(빈 값이면 미표시).</summary>
+        public string SystemNotifyCallTelText { get; set; } = "";
         /// <summary>MongoDB 연결 문자열. 비어 있으면 JSON 파일 사용.</summary>
         public string? MongoConnectionString { get; set; }
         /// <summary>MongoDB 데이터베이스 이름. 비어 있으면 "agent".</summary>
@@ -41,6 +43,17 @@ namespace CareReceiverAgent.Host.Services
             {
                 return new AppRuntimeConfig();
             }
+        }
+
+        public static void Save(AppRuntimeConfig cfg)
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.json");
+            var json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+            File.WriteAllText(path, json, System.Text.Encoding.UTF8);
         }
     }
 }

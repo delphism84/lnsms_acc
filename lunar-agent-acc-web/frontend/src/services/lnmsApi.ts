@@ -48,8 +48,9 @@ export interface StoreInfo {
   setids: string[];
 }
 
-export async function lnmsLogin(userid: string, userpw: string): Promise<{ success: boolean; userid?: string }> {
-  const res = await fetch(`${getLnmsBase()}/api/auth/login`, {
+export async function lnmsLogin(userid: string, userpw: string, opts?: { useRemote?: boolean }): Promise<{ success: boolean; userid?: string }> {
+  const base = opts?.useRemote === false ? getLnmsBase() : getLnmsRemoteBase();
+  const res = await fetch(`${base}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userid, userpw }),
@@ -71,23 +72,24 @@ export async function lnmsListSets(userid?: string, opts?: { useRemote?: boolean
 
 /** 매장 정보 (세트ID 내려받기용: setids 포함) */
 export async function lnmsGetStore(storeid: string): Promise<StoreInfo> {
-  const res = await fetch(`${getLnmsBase()}/api/store/${encodeURIComponent(storeid)}`);
+  const res = await fetch(`${getLnmsRemoteBase()}/api/store/${encodeURIComponent(storeid)}`);
   if (!res.ok) throw new Error('매장 조회 실패');
   return res.json();
 }
 
 /** 유저 소속 매장 목록 (로그인 후 매장 선택용) */
 export async function lnmsGetStores(userid: string): Promise<StoreInfo[]> {
-  const res = await fetch(`${getLnmsBase()}/api/store?userid=${encodeURIComponent(userid)}`);
+  const res = await fetch(`${getLnmsRemoteBase()}/api/store?userid=${encodeURIComponent(userid)}`);
   if (!res.ok) throw new Error('매장 목록 조회 실패');
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
 
 export async function lnmsGetSetConfig(setid: string, userid?: string): Promise<SetConfig> {
+  const base = getLnmsRemoteBase();
   const url = userid
-    ? `${getLnmsBase()}/api/sets/${encodeURIComponent(setid)}/config?userid=${encodeURIComponent(userid)}`
-    : `${getLnmsBase()}/api/sets/${encodeURIComponent(setid)}/config`;
+    ? `${base}/api/sets/${encodeURIComponent(setid)}/config?userid=${encodeURIComponent(userid)}`
+    : `${base}/api/sets/${encodeURIComponent(setid)}/config`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('세트 설정 조회 실패');
   return res.json();
