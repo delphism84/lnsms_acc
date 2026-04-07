@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo Care Receiver Agent - Build and Run
+echo Care Receiver Agent - Build, SFTP upload, Run
 echo ========================================
 echo.
 
@@ -18,7 +18,7 @@ set HOST_PROJECT=CareReceiverAgent.Host\CareReceiverAgent.Host.csproj
 :: 프로세스 이름
 set HOST_PROCESS=CareReceiverAgent.Host.exe
 
-echo [1/4] 기존 프로세스 종료 중...
+echo [1/6] 기존 프로세스 종료 중...
 echo.
 
 :: 호스트 프로세스 종료 (정확한 프로세스 이름으로 필터링)
@@ -47,7 +47,7 @@ timeout /t 2 /nobreak >nul
 
 echo.
 
-echo [2/4] 프론트엔드 빌드 중...
+echo [2/6] 프론트엔드 빌드 중...
 cd "%FRONTEND_DIR%"
 if not exist "node_modules" (
     echo npm 패키지 설치 중...
@@ -71,7 +71,7 @@ cd ..
 echo 프론트엔드 빌드 완료!
 echo.
 
-echo [3/4] 프론트엔드 빌드 결과물을 Host wwwroot로 복사 중...
+echo [3/6] 프론트엔드 빌드 결과물을 Host wwwroot(Debug^)로 복사 중...
 set SRC_DIR=%CD%\%FRONTEND_DIR%\dist
 set DST_DIR=%CD%\CareReceiverAgent.Host\bin\Debug\net9.0-windows\wwwroot
 
@@ -104,7 +104,7 @@ if exist "%SRC_DIR%" (
 )
 echo.
 
-echo [4/4] 호스트 프로젝트 빌드 중...
+echo [4/6] 호스트 프로젝트 빌드 중 (Debug, 로컬 실행용^)...
 dotnet build "%HOST_PROJECT%" -c Debug
 if %errorlevel% neq 0 (
     echo 호스트 빌드 실패!
@@ -118,6 +118,43 @@ if exist "CareReceiverAgent.Host\app.ico" (
     if not exist "CareReceiverAgent.Host\bin\Debug\net9.0-windows\app.ico" (
         copy /Y "CareReceiverAgent.Host\app.ico" "CareReceiverAgent.Host\bin\Debug\net9.0-windows\app.ico" >nul 2>&1
         echo 아이콘 파일 복사 완료
+    )
+)
+echo.
+
+echo [5/6] Release publish + wwwroot (SFTP 업로드용, build-installer.bat 과 동일 경로^)...
+dotnet publish "%HOST_PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish"
+if %errorlevel% neq 0 (
+    echo dotnet publish 실패!
+    pause
+    exit /b 1
+)
+set "PUB_WWW=%CD%\CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish\wwwroot"
+if not exist "%PUB_WWW%" mkdir "%PUB_WWW%"
+robocopy "%SRC_DIR%" "%PUB_WWW%" /E /NFL /NDL /NJH /NJS /NP
+if errorlevel 8 (
+    echo publish wwwroot 복사 실패!
+    pause
+    exit /b 1
+)
+echo publish 완료: CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish
+echo.
+
+echo [6/6] SFTP 업로드 (LnuploaderFtp.exe, SSH.NET^)...
+set "LNUPL=%SCRIPT_DIR%..\lnuploader_ftp\bin\Release\net48\LnuploaderFtp.exe"
+set "LNUINI=%SCRIPT_DIR%..\lnuploader_ftp\bin\Release\net48\upload.ini"
+if not exist "!LNUPL!" (
+    echo [경고] LnuploaderFtp 없음: !LNUPL!
+    echo        lnuploader_ftp 프로젝트에서 Release 빌드 후 다시 시도하세요.
+) else if not exist "!LNUINI!" (
+    echo [경고] upload.ini 없음: !LNUINI!
+) else (
+    echo 실행: "!LNUPL!" "!LNUINI!"
+    "!LNUPL!" "!LNUINI!"
+    if errorlevel 1 (
+        echo SFTP 업로드에서 오류가 있었습니다 (종료 코드 !errorlevel!^).
+    ) else (
+        echo SFTP 업로드 완료.
     )
 )
 echo.

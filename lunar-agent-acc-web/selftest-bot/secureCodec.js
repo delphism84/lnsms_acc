@@ -168,8 +168,9 @@ function decryptHexPayload(encodedHex, sessionSeed) {
     }
   }
 
-  swap16(d, s0, s12);
+  // encoding: swap(0/12) then swap(4/8) — decode: swap(4/8) then swap(0/12) (secure_fw.c decoding_data)
   swap16(d, s4, s8);
+  swap16(d, s0, s12);
 
   if (crc8(d, 16) !== 0) return null;
 

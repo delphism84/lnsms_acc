@@ -5,9 +5,21 @@ import '../styles/Modal.css';
 interface BellAddModalProps {
   onAdd: (bellCode: string) => void;
   onClose: () => void;
+  /** 모달 제목 (기본: 벨 등록) */
+  title?: string;
+  /** 수신 대기 안내 (기본: 벨을 누르세요) */
+  listeningMessage?: string;
+  /** 완료 안내 (기본: 벨 등록 완료) */
+  completedMessage?: string;
 }
 
-function BellAddModal({ onAdd, onClose }: BellAddModalProps) {
+function BellAddModal({
+  onAdd,
+  onClose,
+  title = '벨 등록',
+  listeningMessage = '벨을 누르세요',
+  completedMessage = '벨 등록 완료',
+}: BellAddModalProps) {
   const [status, setStatus] = useState<'listening' | 'done'>('listening');
   const detectedSetRef = useRef<Set<string>>(new Set());
   const closeTimerRef = useRef<number | null>(null);
@@ -117,7 +129,7 @@ function BellAddModal({ onAdd, onClose }: BellAddModalProps) {
     <div className="modal-overlay" onMouseDown={handleOverlayMouseDown} onClick={handleOverlayClick}>
       <div className="modal-content bell-add-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>벨 등록</h2>
+          <h2>{title}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -128,11 +140,11 @@ function BellAddModal({ onAdd, onClose }: BellAddModalProps) {
                 <>
                   <div className="bell-listening-indicator">
                     <div className="pulse-animation"></div>
-                    <span>벨을 누르세요</span>
+                    <span>{listeningMessage}</span>
                   </div>
                 </>
               ) : (
-                <div className="bell-registered-row">벨 등록 완료</div>
+                <div className="bell-registered-row">{completedMessage}</div>
               )}
             </div>
           </div>

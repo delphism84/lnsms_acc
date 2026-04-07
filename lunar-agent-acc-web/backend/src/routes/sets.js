@@ -35,7 +35,7 @@ router.get('/:setid/config', async (req, res) => {
       setid: doc.setid,
       phrases,
       serial: doc.serial || { ports: [] },
-      remoteControl: doc.remoteControl || { buttons: [] },
+      remoteControl: doc.remoteControl || { remotes: [] },
     });
   } catch (err) {
     console.error('GET /api/sets/:setid/config', err);
@@ -73,7 +73,7 @@ router.put('/:setid', async (req, res) => {
       serial: serial && typeof serial === 'object' ? serial : (existing.serial || { ports: [] }),
       remoteControl: remoteControl && typeof remoteControl === 'object'
         ? remoteControl
-        : (existing.remoteControl || { buttons: [] }),
+        : (existing.remoteControl || { remotes: [] }),
       updatedAt: new Date(),
     };
     await coll.updateOne({ setid }, { $set: doc });
@@ -106,7 +106,7 @@ router.post('/', async (req, res) => {
       userid: uid,
       phrases: [],
       serial: { ports: [] },
-      remoteControl: { buttons: [] },
+      remoteControl: { remotes: [] },
       updatedAt: new Date(),
     });
     return res.status(201).json({ setid: id, userid: uid });

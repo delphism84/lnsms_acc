@@ -76,7 +76,10 @@ namespace CareReceiverAgent.Host.Services
                     ConnectionStatusChanged?.Invoke(this, (portName, connected));
                 };
 
-                var ok = svc.Connect(portName, entry.BaudRate, entry.SecureEnabled, entry.DeviceSerialNumber);
+                var runtime = AppRuntimeConfig.Load();
+                var secure = runtime.SerialEncryptionEnabled && entry.SecureEnabled;
+                var legacy = runtime.SerialEncryptionEnabled && (entry.AllowLegacyBellDecrypt ?? entry.SecureEnabled);
+                var ok = svc.Connect(portName, entry.BaudRate, secure, entry.DeviceSerialNumber, legacy);
                 if (ok)
                     _byPort[portName] = svc;
                 else
@@ -130,6 +133,19 @@ namespace CareReceiverAgent.Host.Services
             lock (_lock)
             {
                 return _byPort.TryGetValue(portName.Trim(), out var svc) ? svc : null;
+            }
+        }
+
+        /// <summary>
+        /// RX 정규화(복호화)용: 포트가 지정되지 않은 이벤트(QA 등)는 첫 연결 포트 서비스를 사용합니다.
+        /// </summary>
+        public SerialPortService? GetServiceOrFirstConnected(string? portName)
+        {
+            var s = GetService(portName);
+            if (s != null) return s;
+            lock (_lock)
+            {
+                return _byPort.Values.FirstOrDefault(x => x.IsConnected);
             }
         }
 

@@ -21,7 +21,7 @@ namespace CareReceiverAgent.Host.Controllers
 
         /// <summary>
         /// 세트 설정 일괄 적용 (다운로드한 설정으로 에이전트 덮어쓰기). setid.md 규격.
-        /// body: { setid?, phrases: [], serial: { ports: [] } }. 적용 후 activeSetId 저장 → COM RX 시 이 설정 기준 알림.
+        /// body: { setid?, phrases: [], serial: { ports: [] }, remoteControl: { remotes: [] } }. 적용 후 activeSetId 저장 → COM RX 시 이 설정 기준 알림.
         /// </summary>
         [HttpPost]
         public ActionResult Apply([FromBody] SettingsApplyRequest? request)
@@ -59,6 +59,14 @@ namespace CareReceiverAgent.Host.Controllers
                         _serialManager.Connect(entry);
                 }
 
+                if (request.RemoteControl != null && request.RemoteControl.Remotes != null)
+                {
+                    JsonDatabaseService.SaveRemoteControlSettings(new RemoteControlSettings
+                    {
+                        Remotes = request.RemoteControl.Remotes
+                    });
+                }
+
                 if (!string.IsNullOrWhiteSpace(request.Setid))
                     JsonDatabaseService.SaveActiveSetId(request.Setid.Trim());
 
@@ -83,6 +91,7 @@ namespace CareReceiverAgent.Host.Controllers
         public string? Setid { get; set; }
         public List<PhraseApplyItem>? Phrases { get; set; }
         public SerialApplyItem? Serial { get; set; }
+        public RemoteControlSettings? RemoteControl { get; set; }
     }
 
     /// <summary>setid.md: image = 파일명. ImageUrl 호환.</summary>

@@ -1,0 +1,214 @@
+.tcp-btn-primary {
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #007aff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.35);
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.tcp-btn-primary:hover {
+  background: #0051d5;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
+}
+
+.tcp-btn-neutral {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #000000;
+  background: #f2f2f7;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.2s;
+}
+
+.tcp-btn-neutral:hover {
+  background: #e5e5ea;
+}
+
+.tcp-serial-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tcp-serial-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #636366;
+}
+
+.tcp-serial-loading,
+.tcp-serial-saving {
+  font-size: 13px;
+  color: #8e8e93;
+}
+
+.tcp-serial-add-card {
+  background: #ffffff;
+  border: 1px solid #e5e5ea;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.tcp-serial-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px 16px;
+}
+
+.tcp-serial-add-grid .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tcp-serial-add-grid .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3c3c43;
+}
+
+.tcp-serial-add-grid input {
+  padding: 8px 10px;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.tcp-serial-add-grid input:focus,
+.tcp-serial-add-grid select:focus {
+  outline: none;
+  border-color: #007aff;
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.tcp-serial-add-grid select {
+  padding: 8px 10px;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.tcp-serial-check label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3c3c43;
+  cursor: pointer;
+}
+
+.tcp-serial-add-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tcp-serial-table-wrap {
+  border: 1px solid #e5e5ea;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f9f9f9;
+}
+
+.tcp-serial-table-header,
+.tcp-serial-table-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 88px minmax(100px, 1.2fr) 72px 44px 44px 88px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.tcp-serial-table-row-edit .tcp-cell-input,
+.tcp-serial-table-row-edit .tcp-cell-select {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.tcp-serial-table-row-edit .tcp-cell-port {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.tcp-serial-inline-check {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  cursor: pointer;
+}
+
+.tcp-serial-table-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8e8e93;
+  background: #f2f2f7;
+  border-bottom: 1px solid #e5e5ea;
+}
+
+.tcp-serial-table-row {
+  font-size: 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e5ea;
+}
+
+.tcp-serial-table-row:last-child {
+  border-bottom: none;
+}
+
+.tcp-cell-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #1c1c1e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcp-serial-col-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tcp-row-remove {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.tcp-serial-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: #8e8e93;
+  background: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .tcp-serial-table-header,
+  .tcp-serial-table-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tcp-serial-col-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}

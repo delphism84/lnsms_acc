@@ -63,4 +63,32 @@
           Condition="Exists('$(ResourceIcon)')" />
   </Target>
 
+  <!-- Git 마지막 커밋 시각(ISO) + 컴파일 UTC → 창 제목에 표시 (설치·빌드 확인용) -->
+  <Target Name="GenerateBuildStamp" BeforeTargets="BeforeCompile;CoreCompile" DependsOnTargets="PrepareForBuild">
+    <PropertyGroup>
+      <BuildStampCs>$(IntermediateOutputPath)BuildStamp.g.cs</BuildStampCs>
+      <_CompileUtcRaw>$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss'))</_CompileUtcRaw>
+      <_GitDatePathRel>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)git_commit_date.txt</_GitDatePathRel>
+      <_GitDatePath>$([System.IO.Path]::GetFullPath('$(_GitDatePathRel)'))</_GitDatePath>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Delete Files="$(_GitDatePath)" ContinueOnError="true" />
+    <!-- cmd.exe에서 %c 를 확장하지 않도록 %%cI (→ git 에게 %cI 전달) -->
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="git log -1 --format=%%cI &gt; &quot;$(_GitDatePath)&quot;"
+          IgnoreExitCode="true" />
+    <PropertyGroup>
+      <_GitIso></_GitIso>
+      <_GitIso Condition="Exists('$(_GitDatePath)')">$([System.IO.File]::ReadAllText('$(_GitDatePath)').Trim())</_GitIso>
+    </PropertyGroup>
+    <ItemGroup>
+      <Compile Remove="$(BuildStampCs)" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(BuildStampCs)" Overwrite="true" Encoding="UTF-8"
+                      Lines="namespace CareReceiverAgent.Host%3b%0D%0A%0D%0Ainternal static partial class BuildStamp%0D%0A{%0D%0A    internal const string CompiledUtc = @&quot;$(_CompileUtcRaw) UTC&quot;%3B%0D%0A    internal const string SourceCommitIso = @&quot;$(_GitIso)&quot;%3B%0D%0A}%0D%0A" />
+    <ItemGroup>
+      <Compile Include="$(BuildStampCs)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

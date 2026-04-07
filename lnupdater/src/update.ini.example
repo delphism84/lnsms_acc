@@ -1,0 +1,20 @@
+# LnUpdater (클라이언트 런처) — upload.ini 와 동일 [ftp] 사용
+# exe 와 같은 폴더에 upload.ini 또는 update.ini 로 저장 (이름 택일)
+# 또는: LnUpdater.exe "C:\path\to\upload.ini"
+#
+# 동작: SFTP 홈 + destfolder 에서 내려받기 → localRoot 에 반영 → hostExe 실행
+
+[ftp]
+host=sftp.example.com
+port=22
+user=myuser
+password=mypassword
+# LnuploaderFtp 업로드 시 지정한 것과 동일 (홈 기준 하위 경로)
+destfolder=lnsmsacc
+
+[paths]
+# 서버에서 받아 둘 로컬 폴더 (기본 c:\lnsmsacc)
+localRoot=c:\lnsmsacc
+# 동기화 후 실행할 파일명 (localRoot 기준)
+hostExe=CareReceiverAgent.Host.exe
+# 업로더 전용 항목(localFolder, ignoreFile)은 런처에서 무시됩니다.

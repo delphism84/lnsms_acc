@@ -185,9 +185,9 @@ namespace CareReceiverAgent.Host.Services
                 }
             }
 
-            // swap
-            Swap(plain16, s0, s12);
+            // encoding_data: swap(0/12) 후 swap(4/8). decoding_data: 역순으로 swap(4/8) 후 swap(0/12).
             Swap(plain16, s4, s8);
+            Swap(plain16, s0, s12);
 
             // CRC 검증: 레퍼런스는 crc_8(buf,16) == 0 이면 통과
             return Crc8(plain16, 16) == 0;

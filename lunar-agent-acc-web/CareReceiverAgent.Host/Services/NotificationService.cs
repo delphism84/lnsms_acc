@@ -72,14 +72,25 @@ namespace CareReceiverAgent.Host.Services
             }
         }
 
+        /// <summary>
+        /// assist 유형 알림 — 기본(1번) 문구와 동일하게 <c>crcv.assist</c> DB 매칭을 사용합니다.
+        /// </summary>
         public NotificationResult ProcessAssistRequest()
         {
-            // ?�애??리모�??�신 - 고정 ?�시
+            var r = ProcessBellCode("crcv.assist");
+            if (r != null)
+            {
+                r.Type = "assist";
+                return r;
+            }
+
             return new NotificationResult
             {
-                Message = "출입구에???��????�청?�니??",
+                Message = "도와주세요.",
                 Color = "#FF0000",
-                Type = "assist"
+                Type = "assist",
+                IsRegistered = true,
+                Uid = "90000001"
             };
         }
 

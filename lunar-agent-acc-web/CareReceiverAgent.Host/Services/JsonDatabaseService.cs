@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CareReceiverAgent.Host.Models;
@@ -16,6 +18,7 @@ namespace CareReceiverAgent.Host.Services
         private static string SerialSettingsPath => Path.Combine(DataDir, "serial_settings.json");
         private static string ActiveSetIdPath => Path.Combine(DataDir, "active_setid.json");
         private static string RemoteControlPath => Path.Combine(DataDir, "remote_control.json");
+        private static string NetworkTransportPath => Path.Combine(DataDir, "network_transport.json");
         private static readonly object _loadLock = new object();
 
         static JsonDatabaseService()
@@ -150,7 +153,7 @@ namespace CareReceiverAgent.Host.Services
                 }
             }
             
-            // uid "90000001"과 벨 코드 "crcv.assist"를 모두 만족하는 문구가 없으면 생성
+            // uid "90000001" + crcv.assist = 목록 1번(기본) 문구 필백 — 장애인 assist·테스트 벨 코드와 동일 소스
             if (validDefaultPhrase == null)
             {
                 var defaultPhrase = new PhraseModel
@@ -327,8 +330,18 @@ namespace CareReceiverAgent.Host.Services
                     if (File.Exists(RemoteControlPath))
                     {
                         var json = File.ReadAllText(RemoteControlPath, System.Text.Encoding.UTF8);
-                        var loaded = JsonSerializer.Deserialize<RemoteControlSettings>(json, GetJsonOptions());
-                        return NormalizeRemoteControl(loaded);
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("remotes", out var remEl) && remEl.ValueKind == JsonValueKind.Array)
+                        {
+                            var list = JsonSerializer.Deserialize<List<RemoteControlEntry>>(remEl.GetRawText(), GetJsonOptions()) ?? new List<RemoteControlEntry>();
+                            return NormalizeRemoteControl(new RemoteControlSettings { Remotes = list });
+                        }
+                        if (root.TryGetProperty("buttons", out var btnEl) && btnEl.ValueKind == JsonValueKind.Array)
+                        {
+                            var legacy = JsonSerializer.Deserialize<List<LegacyRemoteButtonDto>>(btnEl.GetRawText(), GetJsonOptions());
+                            return MigrateLegacyRemoteButtons(legacy);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -337,6 +350,34 @@ namespace CareReceiverAgent.Host.Services
                 }
                 return NormalizeRemoteControl(null);
             }
+        }
+
+        private sealed class LegacyRemoteButtonDto
+        {
+            public int Number { get; set; }
+            public string? Name { get; set; }
+            public string? SendCode { get; set; }
+        }
+
+        private static RemoteControlSettings MigrateLegacyRemoteButtons(List<LegacyRemoteButtonDto>? legacy)
+        {
+            var outCfg = new RemoteControlSettings();
+            if (legacy == null) return outCfg;
+            foreach (var b in legacy)
+            {
+                if (b == null) continue;
+                var name = (b.Name ?? "").Trim();
+                var send = (b.SendCode ?? "").Trim();
+                if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(send)) continue;
+                outCfg.Remotes.Add(new RemoteControlEntry
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = string.IsNullOrEmpty(name) ? $"리모콘 {b.Number}" : name,
+                    BellCode = "",
+                    Enabled = true
+                });
+            }
+            return NormalizeRemoteControl(outCfg);
         }
 
         public static void SaveRemoteControlSettings(RemoteControlSettings? settings)
@@ -359,27 +400,20 @@ namespace CareReceiverAgent.Host.Services
         private static RemoteControlSettings NormalizeRemoteControl(RemoteControlSettings? input)
         {
             var outCfg = new RemoteControlSettings();
-            var map = new Dictionary<int, RemoteControlButton>();
-            if (input?.Buttons != null)
+            if (input?.Remotes == null) return outCfg;
+            foreach (var e in input.Remotes)
             {
-                foreach (var b in input.Buttons)
+                if (e == null) continue;
+                var id = string.IsNullOrWhiteSpace(e.Id) ? Guid.NewGuid().ToString("N") : e.Id.Trim();
+                var name = e.Name ?? "";
+                var code = (e.BellCode ?? "").Trim().ToLowerInvariant();
+                outCfg.Remotes.Add(new RemoteControlEntry
                 {
-                    if (b == null) continue;
-                    if (b.Number < 1 || b.Number > 15) continue;
-                    map[b.Number] = new RemoteControlButton
-                    {
-                        Number = b.Number,
-                        Name = b.Name ?? string.Empty,
-                        SendCode = b.SendCode ?? string.Empty
-                    };
-                }
-            }
-            for (int i = 1; i <= 15; i++)
-            {
-                if (map.TryGetValue(i, out var b))
-                    outCfg.Buttons.Add(b);
-                else
-                    outCfg.Buttons.Add(new RemoteControlButton { Number = i, Name = string.Empty, SendCode = string.Empty });
+                    Id = id,
+                    Name = name,
+                    BellCode = code,
+                    Enabled = e.Enabled
+                });
             }
             return outCfg;
         }
@@ -418,6 +452,72 @@ namespace CareReceiverAgent.Host.Services
         {
             [System.Text.Json.Serialization.JsonPropertyName("activeSetId")]
             public string ActiveSetId { get; set; } = "";
+        }
+
+        /// <summary>TCP/UDP 수신 링크 설정 (로컬 JSON).</summary>
+        public static NetworkTransportSettings LoadNetworkTransportSettings()
+        {
+            lock (_loadLock)
+            {
+                try
+                {
+                    if (File.Exists(NetworkTransportPath))
+                    {
+                        var json = File.ReadAllText(NetworkTransportPath, System.Text.Encoding.UTF8);
+                        var s = JsonSerializer.Deserialize<NetworkTransportSettings>(json, GetJsonOptions());
+                        return NormalizeNetworkTransport(s);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"network transport load: {ex.Message}");
+                }
+                return new NetworkTransportSettings();
+            }
+        }
+
+        public static void SaveNetworkTransportSettings(NetworkTransportSettings? settings)
+        {
+            lock (_loadLock)
+            {
+                try
+                {
+                    var normalized = NormalizeNetworkTransport(settings);
+                    var json = JsonSerializer.Serialize(normalized, GetJsonOptions());
+                    File.WriteAllText(NetworkTransportPath, json, System.Text.Encoding.UTF8);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"network transport save: {ex.Message}");
+                }
+            }
+        }
+
+        private static NetworkTransportSettings NormalizeNetworkTransport(NetworkTransportSettings? input)
+        {
+            var o = new NetworkTransportSettings();
+            if (input?.Links == null) return o;
+            foreach (var e in input.Links)
+            {
+                if (e == null) continue;
+                var id = string.IsNullOrWhiteSpace(e.Id) ? Guid.NewGuid().ToString("N") : e.Id.Trim();
+                var proto = (e.Protocol ?? "tcp").Trim().ToLowerInvariant();
+                if (proto != "udp") proto = "tcp";
+                var host = (e.Host ?? "").Trim();
+                if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
+                var port = e.Port < 0 || e.Port > 65535 ? 0 : e.Port;
+                o.Links.Add(new NetworkTransportEntry
+                {
+                    Id = id,
+                    Name = e.Name ?? "",
+                    Protocol = proto,
+                    Host = host,
+                    Port = port,
+                    Enabled = e.Enabled,
+                    AutoConnect = e.AutoConnect
+                });
+            }
+            return o;
         }
     }
 }

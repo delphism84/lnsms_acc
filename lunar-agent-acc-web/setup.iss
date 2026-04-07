@@ -5,6 +5,11 @@
 #define MyAppExeName "CareReceiverAgent.Host.exe"
 #define MyAppId "{{A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D}"
 
+; build-installer.bat 의 dotnet publish -o 와 반드시 동일해야 함.
+; 구조: bin\Release\net9.0-windows\win-x64\publish\ (self-contained, -r win-x64)
+;       + wwwroot ← 배치에서 frontend\dist robocopy
+#define LnsmsPublishRoot "CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish"
+
 [Setup]
 AppId={#MyAppId}
 AppName={#MyAppName}
@@ -44,7 +49,7 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "desktopicon"; Description: "데스크톱에 아이콘 만들기"; GroupDescription: "추가 아이콘:"; Flags: checkedonce
 
 [Files]
-Source: "CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#LnsmsPublishRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "CareReceiverAgent.Host\app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

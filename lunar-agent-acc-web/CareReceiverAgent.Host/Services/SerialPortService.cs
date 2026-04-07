@@ -23,6 +23,20 @@ namespace CareReceiverAgent.Host.Services
         private readonly object _logLock = new object();
         private string _deviceSerialHint = "00000000";
         private string? _pendingSeedMark;
+        private readonly object _handshakeLock = new object();
+        private CancellationTokenSource? _seedFallbackCts;
+        private bool _allowLegacyBellDecrypt;
+        /// <summary>펌웨어 기본·테스트 시드 등. <see cref="TryLegacyBellDecryptForBell"/>에서만 사용.</summary>
+        private static readonly ushort[] LegacyBellDecryptSeeds = { 0x1234, 0x0000 };
+
+        /// <summary>
+        /// 장애인 진동벨이 보내는 v4 암호 페이로드(32hex) — 세션 시드 없이 복호화 불가할 때 assist(기본 문구)로 필백합니다.
+        /// </summary>
+        private static readonly System.Collections.Generic.HashSet<string> VibrationBellAssistHex32 =
+            new(System.StringComparer.OrdinalIgnoreCase)
+            {
+                "828b94ad008e5dbffd920f6576df1859",
+            };
 
         public event EventHandler<string>? DataReceived;
         public event EventHandler<bool>? ConnectionStatusChanged;
@@ -32,6 +46,8 @@ namespace CareReceiverAgent.Host.Services
         public int BaudRate { get; private set; }
         public bool SecureEnabled { get; private set; }
         public ushort? SessionSeed { get; private set; }
+        /// <summary>연결 시 적용된 레거시 벨 복호화 플래그(로그·진단용).</summary>
+        public bool LegacyBellDecryptEnabled => _allowLegacyBellDecrypt;
         public string? LastConnectError { get; private set; }
         public string? CurrentSerialNumber { get; private set; }
         public bool LoggingEnabled 
@@ -44,7 +60,7 @@ namespace CareReceiverAgent.Host.Services
         {
         }
 
-        public bool Connect(string portName, int baudRate = 9600, bool secureEnabled = false, string? deviceSerialNumber = null)
+        public bool Connect(string portName, int baudRate = 9600, bool secureEnabled = false, string? deviceSerialNumber = null, bool allowLegacyBellDecrypt = false)
         {
             LastConnectError = null;
             Disconnect();
@@ -52,6 +68,7 @@ namespace CareReceiverAgent.Host.Services
             PortName = portName;
             BaudRate = baudRate;
             SecureEnabled = secureEnabled;
+            _allowLegacyBellDecrypt = allowLegacyBellDecrypt;
             SessionSeed = null;
             CurrentSerialNumber = null;
             _pendingSeedMark = null;
@@ -75,6 +92,14 @@ namespace CareReceiverAgent.Host.Services
                     // 로그 파일 초기화
                     InitializeLogFile(portName);
 
+                    // 보안: ReadThread가 TX보다 먼저 .ok를 받으면 TryHandleSerialOk가 SessionSeed 없이 실행되는 레이스를 막기 위해
+                    // 시드·마크 생성은 반드시 ReadThread 시작 및 SendCommand보다 앞에 둔다.
+                    if (SecureEnabled)
+                    {
+                        SessionSeed = SecureSerialCodec.GenerateSessionSeed();
+                        _pendingSeedMark = SecureSerialCodec.MakeSeedMarkString(SessionSeed.Value);
+                    }
+
                     _cancellationTokenSource = new CancellationTokenSource();
                     _readThread = new Thread(() => ReadThreadProc(_cancellationTokenSource.Token))
                     {
@@ -91,13 +116,43 @@ namespace CareReceiverAgent.Host.Services
                     // 2) 보안모드: <시리얼>.seed=<mark> (시리얼을 아직 모르면 ok 수신 후 전송)
                     if (SecureEnabled)
                     {
-                        SessionSeed = SecureSerialCodec.GenerateSessionSeed();
-                        _pendingSeedMark = SecureSerialCodec.MakeSeedMarkString(SessionSeed.Value);
                         if (_deviceSerialHint != "00000000")
                         {
-                            SendCommand($"{_deviceSerialHint}.seed={_pendingSeedMark}");
+                            SendSessionSeedMark(_deviceSerialHint, _pendingSeedMark!);
                             _pendingSeedMark = null;
                             CurrentSerialNumber = _deviceSerialHint;
+                        }
+                        else
+                        {
+                            // 시리얼 미설정(00000000) 시 .ok 수신 후에만 시드를 보냄. .ok 누락·지연 시 모듈은 이전/기본 시드로 암호화해 PC 복호화가 실패함 → 짧은 지연 후 1회 폴백 전송
+                            try
+                            {
+                                _seedFallbackCts?.Cancel();
+                                _seedFallbackCts?.Dispose();
+                                _seedFallbackCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+                                var ct = _seedFallbackCts.Token;
+                                var hint = _deviceSerialHint;
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        await Task.Delay(900, ct).ConfigureAwait(false);
+                                        if (ct.IsCancellationRequested) return;
+                                        string? mark;
+                                        lock (_handshakeLock)
+                                        {
+                                            if (string.IsNullOrEmpty(_pendingSeedMark)) return;
+                                            if (_serialPort?.IsOpen != true) return;
+                                            mark = _pendingSeedMark;
+                                            _pendingSeedMark = null;
+                                        }
+                                        WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 시드 전송(폴백): 통신체크 .ok 지연/미수신으로 시드 재동기화 시도");
+                                        SendSessionSeedMark(hint, mark);
+                                    }
+                                    catch (OperationCanceledException) { }
+                                }, ct);
+                            }
+                            catch { }
                         }
                     }
 
@@ -142,7 +197,7 @@ namespace CareReceiverAgent.Host.Services
                     AutoFlush = true
                 };
 
-                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 포트 연결: {portName} ({BaudRate} baud), deviceSerialHint={_deviceSerialHint}, secure={SecureEnabled}");
+                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 포트 연결: {portName} ({BaudRate} baud), deviceSerialHint={_deviceSerialHint}, secure={SecureEnabled}, legacyBellDecrypt={_allowLegacyBellDecrypt}");
             }
             catch (Exception ex)
             {
@@ -150,6 +205,15 @@ namespace CareReceiverAgent.Host.Services
             }
         }
         
+        /// <summary>
+        /// 벨 등록/암호화 분석용 — <c>log_*.txt</c>에 <c>[벨분석]</c> 접두로 기록합니다.
+        /// </summary>
+        public void WriteBellAnalysisLog(string detail)
+        {
+            if (!_loggingEnabled || _logWriter == null) return;
+            WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [벨분석] {detail}");
+        }
+
         private void WriteLog(string message)
         {
             if (!_loggingEnabled || _logWriter == null) return;
@@ -209,6 +273,14 @@ namespace CareReceiverAgent.Host.Services
             try
             {
                 WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 포트 연결 해제");
+
+                try
+                {
+                    _seedFallbackCts?.Cancel();
+                    _seedFallbackCts?.Dispose();
+                    _seedFallbackCts = null;
+                }
+                catch { }
                 
                 _cancellationTokenSource?.Cancel();
 
@@ -236,6 +308,7 @@ namespace CareReceiverAgent.Host.Services
                 SecureEnabled = false;
                 CurrentSerialNumber = null;
                 _pendingSeedMark = null;
+                _allowLegacyBellDecrypt = false;
             }
             catch (Exception ex)
             {
@@ -305,7 +378,7 @@ namespace CareReceiverAgent.Host.Services
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"?�이???�신 ?�류: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"시리얼 수신 오류: {ex.Message}");
                     Thread.Sleep(100);
                 }
             }
@@ -314,6 +387,8 @@ namespace CareReceiverAgent.Host.Services
         private void ProcessReceivedBytes(byte[] data)
         {
             if (data == null || data.Length == 0) return;
+            // 라인(\r) 조립 전, 포트에서 읽은 원본 바이트 그대로 (분할 수신 추적용)
+            WriteLogFrame("RX-chunk", data);
             _rxBuffer.AddRange(data);
 
             // \r로만 구분된 완전한 메시지 처리 (\n은 무시)
@@ -366,16 +441,131 @@ namespace CareReceiverAgent.Host.Services
 
         public string NormalizeInboundLine(string line)
         {
-            // 보안 모드: "<prefix>.<32hex>" 를 "<prefix>.<plain>" 으로 복호화 시도
-            if (SecureEnabled && SessionSeed.HasValue)
+            // v4 암호화 라인(32hex)이면 복호화 시도 + [벨분석] 로그
+            if (TryGetV4HexPayload(line, out var encPrefix, out var hex32))
+            {
+                if (SessionSeed.HasValue)
+                {
+                    var decoded = SecureSerialCodec.TryDecryptLine(line, SessionSeed.Value);
+                    if (!string.IsNullOrEmpty(decoded))
+                    {
+                        WriteBellAnalysisLog(
+                            $"암호화프레임 복호화 성공 Port={PortName} secure={SecureEnabled} 평문={SanitizeForBellLog(decoded)}");
+                        return decoded;
+                    }
+
+                    var legacy = TryLegacyBellDecryptForBell(line);
+                    if (!string.IsNullOrEmpty(legacy))
+                        return legacy;
+
+                    if (VibrationBellAssistHex32.Contains(hex32))
+                    {
+                        var plain = $"{encPrefix}.assist";
+                        WriteBellAnalysisLog(
+                            $"장애인진동벨 기본필백(hex 일치, 세션복호 실패 후) → assist Port={PortName} hex32={hex32} 평문={plain}");
+                        return plain;
+                    }
+
+                    WriteBellAnalysisLog(
+                        $"암호화프레임 복호화 실패 Port={PortName} prefix={encPrefix} SessionSeed=0x{SessionSeed.Value:x4} hex32={hex32} " +
+                        $"legacyBellDecrypt={_allowLegacyBellDecrypt} " +
+                        (_allowLegacyBellDecrypt
+                            ? "(세션 실패 후 0x1234·0x0000 시도했으나 bell= 미매칭)"
+                            : "(레거시 미시도 — 연결 시 legacyBellDecrypt=false 또는 저장된 설정만 사용됨)"));
+                    return line;
+                }
+
+                var legacyNoSeed = TryLegacyBellDecryptForBell(line);
+                if (!string.IsNullOrEmpty(legacyNoSeed))
+                    return legacyNoSeed;
+
+                if (VibrationBellAssistHex32.Contains(hex32))
+                {
+                    var plain = $"{encPrefix}.assist";
+                    WriteBellAnalysisLog(
+                        $"장애인진동벨 기본필백(hex 일치) → 평문으로 치환 Port={PortName} prefix={encPrefix} hex32={hex32} 평문={plain}");
+                    return plain;
+                }
+
+                WriteBellAnalysisLog(
+                    $"암호화프레임 수신했으나 SessionSeed 없음 Port={PortName} secure={SecureEnabled} legacyBellDecrypt={_allowLegacyBellDecrypt} " +
+                    $"prefix={encPrefix} hex32앞12={hex32[..Math.Min(12, hex32.Length)]}…");
+                return line;
+            }
+
+            // 그 외: "<prefix>.<32hex>"가 아니어도 시드가 있으면 TryDecryptLine (호환)
+            if (SessionSeed.HasValue)
             {
                 var decoded = SecureSerialCodec.TryDecryptLine(line, SessionSeed.Value);
                 if (!string.IsNullOrEmpty(decoded))
-                {
                     return decoded;
-                }
             }
+
             return line;
+        }
+
+        /// <summary>
+        /// 세션 시드와 무관하게(옵션 켠 경우만) 레거시 시드로 복호화 — 평문이 <c>*.bell=</c> 일 때만 채택.
+        /// </summary>
+        private string? TryLegacyBellDecryptForBell(string line)
+        {
+            if (!_allowLegacyBellDecrypt) return null;
+            foreach (var seed in LegacyBellDecryptSeeds)
+            {
+                if (SessionSeed.HasValue && seed == SessionSeed.Value) continue;
+                var dec = SecureSerialCodec.TryDecryptLine(line, seed);
+                if (string.IsNullOrEmpty(dec) || !PayloadBodyStartsWithBell(dec)) continue;
+                WriteBellAnalysisLog(
+                    $"레거시시드로 벨프레임만 복호화 성공 Port={PortName} seed=0x{seed:x4} 평문={SanitizeForBellLog(dec)}");
+                return dec;
+            }
+            return null;
+        }
+
+        private static bool PayloadBodyStartsWithBell(string decodedLine)
+        {
+            int d = decodedLine.IndexOf('.');
+            var rest = (d >= 0 && d < decodedLine.Length - 1
+                ? decodedLine.Substring(d + 1)
+                : decodedLine).TrimStart();
+            return rest.StartsWith("bell=", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryGetV4HexPayload(string line, out string prefix, out string hex32)
+        {
+            prefix = string.Empty;
+            hex32 = string.Empty;
+            if (string.IsNullOrWhiteSpace(line)) return false;
+            int dot = line.IndexOf('.');
+            if (dot <= 0 || dot >= line.Length - 1) return false;
+            prefix = line.Substring(0, dot).Trim();
+            if (string.IsNullOrWhiteSpace(prefix)) return false;
+            var payload = line.Substring(dot + 1).Trim();
+            if (payload.Length != 32) return false;
+            if (!payload.All(IsHexAscii)) return false;
+            hex32 = payload;
+            return true;
+        }
+
+        private static bool IsHexAscii(char c) =>
+            (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
+        private static string SanitizeForBellLog(string s, int maxLen = 200)
+        {
+            if (string.IsNullOrEmpty(s)) return "(empty)";
+            var sb = new StringBuilder(Math.Min(s.Length, maxLen) + 8);
+            int n = 0;
+            foreach (var ch in s)
+            {
+                if (n >= maxLen) { sb.Append("…"); break; }
+                if (ch == '\0') sb.Append("\\0");
+                else if (ch < 0x20) sb.Append($"\\x{(int)ch:x2}");
+                else if (ch == '\r') sb.Append("\\r");
+                else if (ch == '\n') sb.Append("\\n");
+                else sb.Append(ch);
+                n++;
+            }
+            return sb.ToString();
         }
         
         /// <summary>
@@ -407,35 +597,54 @@ namespace CareReceiverAgent.Host.Services
 
         private void TryHandleSerialOk(string line)
         {
-            // "<sn>.ok"
+            // "<sn>.ok" — 실제 장치는 "00000000\r" 조회 시 "00000000.ok" 로 응답
             int dot = line.IndexOf('.');
             if (dot <= 0) return;
             var prefix = line.Substring(0, dot).Trim();
             var body = line.Substring(dot + 1).Trim();
             if (!body.Equals("ok", StringComparison.OrdinalIgnoreCase)) return;
             if (!IsEightDigits(prefix)) return;
-            if (prefix == "00000000") return;
 
-            if (!string.Equals(CurrentSerialNumber, prefix, StringComparison.Ordinal))
+            if (prefix != "00000000")
             {
-                CurrentSerialNumber = prefix;
-                WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] device serial detected: {CurrentSerialNumber}");
+                if (!string.Equals(CurrentSerialNumber, prefix, StringComparison.Ordinal))
+                {
+                    CurrentSerialNumber = prefix;
+                    WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] device serial detected: {CurrentSerialNumber}");
+                }
             }
 
             if (SecureEnabled && SessionSeed.HasValue && !string.IsNullOrEmpty(_pendingSeedMark))
             {
-                var mark = _pendingSeedMark;
-                _pendingSeedMark = null;
-                SendCommand($"{CurrentSerialNumber}.seed={mark}");
+                string mark;
+                lock (_handshakeLock)
+                {
+                    if (string.IsNullOrEmpty(_pendingSeedMark)) return;
+                    mark = _pendingSeedMark;
+                    _pendingSeedMark = null;
+                }
+                SendSessionSeedMark(prefix, mark);
             }
+        }
+
+        /// <summary>
+        /// v4 프로토콜(&lt;sn&gt;.seed=)과 레퍼런스 펌웨어(secure_fw.c: crcv.seed=)를 모두 만족시키기 위해 동일 마크를 두 줄로 전송합니다.
+        /// 일부 모듈은 8자리 접두 시드만 무시하고 기본 시드(예: 0x1234)로 암호화하는 경우가 있습니다.
+        /// </summary>
+        private void SendSessionSeedMark(string eightDigitSerialPrefix, string mark44)
+        {
+            SendCommand($"{eightDigitSerialPrefix}.seed={mark44}");
+            SendCommand($"crcv.seed={mark44}");
         }
 
         private void WriteLogFrame(string dir, byte[] bytes)
         {
             if (bytes == null) return;
             var hex = string.Join(" ", bytes.Select(b => b.ToString("x2")));
+            var dec = string.Join(",", bytes.Select(b => b.ToString()));
             var ascii = ToPrintableAscii(bytes);
-            WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {dir} ascii=\"{ascii}\" hex={hex}");
+            // 원본 바이트: 공백 구분 hex + 십진 값(동일 순서). ascii는 인쇄 가능 문자 위주 표시.
+            WriteLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {dir} len={bytes.Length} ascii=\"{ascii}\" raw_hex={hex} raw_dec={dec}");
         }
 
         private static string ToPrintableAscii(byte[] bytes)

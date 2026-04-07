@@ -1,0 +1,7 @@
+# upload.ignore 로 복사하여 수정. INI [paths] ignoreFile=upload.ignore
+# 없으면 내장 기본 제외 목록 사용.
+
+*.pdb
+*.log
+**/log/**
+**/obj/**

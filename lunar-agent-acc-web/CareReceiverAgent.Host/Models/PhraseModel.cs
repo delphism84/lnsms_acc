@@ -218,6 +218,11 @@ namespace CareReceiverAgent.Host.Models
         public bool AutoConnect { get; set; } = true;
         public bool SecureEnabled { get; set; } = false;
         /// <summary>
+        /// 세션 시드로 v4 복호화가 실패해도, 알려진 레거시 시드(예: 0x1234)로 <c>bell=</c> 프레임만 복호화를 재시도합니다.
+        /// <c>null</c>: 구 설정 파일(필드 없음) — <see cref="SecureEnabled"/>가 true이면 연결 시 레거시 시도로 간주합니다.
+        /// </summary>
+        public bool? AllowLegacyBellDecrypt { get; set; }
+        /// <summary>
         /// UART 프로토콜 v4: 8자리 시리얼(prefix). 모를 경우 "00000000"로 통신 체크를 보냄.
         /// </summary>
         public string DeviceSerialNumber { get; set; } = "00000000";

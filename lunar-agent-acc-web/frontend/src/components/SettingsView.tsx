@@ -1,13 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getPhrases, createPhrase, updatePhrase, deletePhrase } from '../services/phrases';
 import type { Phrase } from '../services/phrases';
 import { getApiBaseUrl } from '../services/api';
 import * as lnms from '../services/lnmsApi';
 import { showCustomAlert } from './CustomAlert';
 import { showCustomConfirm } from './CustomConfirm';
-import { showCustomPrompt } from './CustomPrompt';
 import PhraseModal from './PhraseModal';
-import SerialPortModal from './SerialPortModal';
+import SerialPortSettingsPanel from './SerialPortSettingsPanel';
+import TcpSerialPortSettings from './TcpSerialPortSettings';
 import BellAddModal from './BellAddModal';
 import '../styles/SettingsView.css';
 
@@ -50,8 +50,8 @@ interface SettingsTransferModalProps {
   mode: 'download' | 'upload';
   onClose: () => void;
   onDownloadApply: (setid: string) => Promise<void>;
-  onUploadSave: (setid: string, isNew: boolean, config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } }) => Promise<void>;
-  currentConfig?: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null;
+  onUploadSave: (setid: string, isNew: boolean, config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { remotes?: unknown[] } }) => Promise<void>;
+  currentConfig?: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { remotes?: unknown[] } } | null;
   /** 다운로드 시: 지정 시 해당 매장에 연결된 세트ID만 표시 */
   storeid?: string | null;
   /** 업로드 시 신규 세트 생성에 사용할 userid */
@@ -215,19 +215,34 @@ interface SettingsViewProps {
   onNavigateBack: () => void;
 }
 
-type RemoteButton = {
-  number: number; // 1..15
+type RemoteRow = {
+  id: string;
   name: string;
-  sendCode: string;
+  bellCode: string;
+  enabled: boolean;
 };
-type SettingsTab = 'phrases' | 'remote';
+
+function newRemoteId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `r-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/** 클라우드 세트에 remotes 배열만 있을 때만 에이전트 리모콘 파일을 갱신(구 buttons 전용 문서는 건드리지 않음). */
+function remoteControlForSettingsApply(rc: unknown): { remoteControl?: { remotes: unknown[] } } {
+  if (!rc || typeof rc !== 'object') return {};
+  const remotes = (rc as { remotes?: unknown }).remotes;
+  if (Array.isArray(remotes)) return { remoteControl: { remotes } };
+  return {};
+}
+type SettingsTab = 'bell' | 'remote' | 'module' | 'system';
+type ModuleSubTab = 'serial' | 'tcp';
 
 function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [selectedPhrase, setSelectedPhrase] = useState<Phrase | null>(null);
   const [isPhraseModalOpen, setIsPhraseModalOpen] = useState(false);
   const [phraseModalMode, setPhraseModalMode] = useState<'add' | 'edit'>('edit');
-  const [isSerialPortModalOpen, setIsSerialPortModalOpen] = useState(false);
+  const [moduleSubTab, setModuleSubTab] = useState<ModuleSubTab>('serial');
   const [isBellAddModalOpen, setIsBellAddModalOpen] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [currentPhraseForBell, setCurrentPhraseForBell] = useState<Phrase | null>(null);
@@ -239,13 +254,28 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   const [storesForUser, setStoresForUser] = useState<lnms.StoreInfo[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } } | null>(null);
+  const [uploadConfig, setUploadConfig] = useState<{ phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { remotes?: unknown[] } } | null>(null);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
-  const [remoteButtons, setRemoteButtons] = useState<RemoteButton[]>([]);
+  const [remotes, setRemotes] = useState<RemoteRow[]>([]);
+  const remotesRef = useRef<RemoteRow[]>([]);
+  remotesRef.current = remotes;
+  const remoteSaveSeqRef = useRef(0);
+  /** + 리모콘 추가 클릭 시 input blur가 먼저 오며 구 상태로 POST 되는 것을 막음 (mousedown이 blur보다 앞섬) */
+  const suppressRemoteBlurSaveRef = useRef(false);
+  /** 리모콘 등록(벨 수신) 모달이 적용할 행 id */
+  const [remoteRegisterModalId, setRemoteRegisterModalId] = useState<string | null>(null);
   const [appTitle, setAppTitle] = useState('');
   const [notifyTitle, setNotifyTitle] = useState('');
   const [callTelText, setCallTelText] = useState('');
-  const [activeTab, setActiveTab] = useState<SettingsTab>('phrases');
+  const [serialEncryptionEnabled, setSerialEncryptionEnabled] = useState(false);
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [newSystemPassword, setNewSystemPassword] = useState('');
+  const [confirmSystemPassword, setConfirmSystemPassword] = useState('');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('bell');
+  const [trayIconBust, setTrayIconBust] = useState(0);
+  const [trayDragOver, setTrayDragOver] = useState(false);
+  const trayFileInputRef = useRef<HTMLInputElement>(null);
+  const [trayPreviewUrl, setTrayPreviewUrl] = useState('');
 
   const completeLogin = useCallback(async (uid: string, clearPwField: boolean) => {
     setIsLoggedIn(true);
@@ -292,7 +322,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
     loadPhrases();
     loadTTSEnabled();
     loadActiveSetId();
-    loadRemoteButtons();
+    loadRemotes();
   }, []);
 
   const loadAppRuntime = async () => {
@@ -304,6 +334,8 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       setAppTitle(String(cfg?.title ?? ''));
       setNotifyTitle(String(cfg?.notificationTitle ?? ''));
       setCallTelText(String(cfg?.systemNotifyCallTelText ?? ''));
+      setSerialEncryptionEnabled(Boolean(cfg?.serialEncryptionEnabled));
+      setTrayIconBust((b) => b + 1);
     } catch {
       // ignore
     }
@@ -312,6 +344,21 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
   useEffect(() => {
     loadAppRuntime();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = await getApiBaseUrl();
+        if (!cancelled) setTrayPreviewUrl(`${u}/api/settings/tray-icon?v=${trayIconBust}`);
+      } catch {
+        if (!cancelled) setTrayPreviewUrl('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [trayIconBust]);
 
   const saveAppRuntime = async () => {
     try {
@@ -323,6 +370,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
           title: appTitle,
           notificationTitle: notifyTitle,
           systemNotifyCallTelText: callTelText,
+          serialEncryptionEnabled,
         }),
       });
       if (!res.ok) {
@@ -332,6 +380,79 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       await showCustomAlert('저장했습니다.');
     } catch (e) {
       await showCustomAlert(e instanceof Error ? e.message : '저장 실패');
+    }
+  };
+
+  const uploadTrayIcoFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.ico')) {
+      await showCustomAlert('.ico 파일만 등록할 수 있습니다.');
+      return;
+    }
+    try {
+      const apiUrl = await getApiBaseUrl();
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`${apiUrl}/api/settings/app/tray-icon`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || '아이콘 저장 실패');
+      }
+      setTrayIconBust((b) => b + 1);
+      await showCustomAlert(String(data?.message || '아이콘을 저장했습니다.'));
+    } catch (e) {
+      await showCustomAlert(e instanceof Error ? e.message : '아이콘 저장 실패');
+    }
+  };
+
+  const handleTrayIconFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) void uploadTrayIcoFile(f);
+  };
+
+  const handleResetTrayIcon = async () => {
+    const ok = await showCustomConfirm('기본 아이콘(resource/appicon.ico)으로 되돌릴까요?');
+    if (!ok) return;
+    try {
+      const apiUrl = await getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/settings/app/tray-icon/reset`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || '초기화 실패');
+      setTrayIconBust((b) => b + 1);
+      await showCustomAlert(String(data?.message || '기본 아이콘으로 되돌렸습니다.'));
+    } catch (e) {
+      await showCustomAlert(e instanceof Error ? e.message : '초기화 실패');
+    }
+  };
+
+  const handleChangeSystemPassword = async () => {
+    const next = newSystemPassword.trim();
+    const confirm = confirmSystemPassword.trim();
+    if (!next) {
+      await showCustomAlert('새 비밀번호를 입력하세요.');
+      return;
+    }
+    if (next !== confirm) {
+      await showCustomAlert('비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+    try {
+      const apiUrl = await getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/settings/app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemAccessPassword: next }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || '비밀번호 변경 실패');
+      }
+      setShowPasswordChangeModal(false);
+      setNewSystemPassword('');
+      setConfirmSystemPassword('');
+      await showCustomAlert('시스템 비밀번호를 변경했습니다.');
+    } catch (e) {
+      await showCustomAlert(e instanceof Error ? e.message : '비밀번호 변경 실패');
     }
   };
 
@@ -363,99 +484,104 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
     })();
   }, []);
 
-  const normalizeRemoteButtons = (data: any): RemoteButton[] => {
-    const raw = data?.buttons ?? data?.Buttons ?? [];
-    if (!Array.isArray(raw)) return Array.from({ length: 15 }, (_, i) => ({ number: i + 1, name: '', sendCode: '' }));
-    const map = new Map<number, RemoteButton>();
-    for (const item of raw) {
-      const n = Number(item?.number ?? item?.Number);
-      if (!Number.isFinite(n) || n < 1 || n > 15) continue;
-      map.set(n, {
-        number: n,
-        name: String(item?.name ?? item?.Name ?? ''),
-        sendCode: String(item?.sendCode ?? item?.SendCode ?? ''),
-      });
-    }
-    return Array.from({ length: 15 }, (_, i) => map.get(i + 1) ?? ({ number: i + 1, name: '', sendCode: '' }));
+  const normalizeRemoteRows = (data: unknown): RemoteRow[] => {
+    const top = data as { remotes?: unknown[]; Remotes?: unknown[]; settings?: { remotes?: unknown[] } };
+    const raw = top?.remotes
+      ?? top?.Remotes
+      ?? top?.settings?.remotes
+      ?? [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item: unknown, i: number) => {
+      const o = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+      return {
+        id: String(o.id ?? o.Id ?? `r-${i}`),
+        name: String(o.name ?? o.Name ?? ''),
+        bellCode: String(o.bellCode ?? o.BellCode ?? '').trim().toLowerCase(),
+        enabled: o.enabled !== false && o.Enabled !== false,
+      };
+    });
   };
 
-  const loadRemoteButtons = async () => {
+  const loadRemotes = async () => {
     try {
       const apiUrl = await getApiBaseUrl();
       const res = await fetch(`${apiUrl}/api/remotecontrol/buttons`);
       if (!res.ok) throw new Error('리모콘 설정 로드 실패');
       const data = await res.json();
-      setRemoteButtons(normalizeRemoteButtons(data));
+      setRemotes(normalizeRemoteRows(data));
     } catch (e) {
       console.error(e);
-      setRemoteButtons(Array.from({ length: 15 }, (_, i) => ({ number: i + 1, name: '', sendCode: '' })));
+      setRemotes([]);
     }
   };
 
-  const saveRemoteButtons = async (nextButtons: RemoteButton[]) => {
+  const normalizeRemoteRowLocal = (r: RemoteRow): RemoteRow => ({
+    id: r.id,
+    name: r.name,
+    bellCode: r.bellCode.trim().toLowerCase(),
+    enabled: r.enabled,
+  });
+
+  const saveRemotes = async (nextRows: RemoteRow[]) => {
+    const seq = ++remoteSaveSeqRef.current;
+    const snapshot = nextRows.map(normalizeRemoteRowLocal);
     const apiUrl = await getApiBaseUrl();
-    const body = { buttons: nextButtons.map(b => ({ number: b.number, name: b.name, sendCode: b.sendCode })) };
+    const body = { remotes: snapshot };
     const res = await fetch(`${apiUrl}/api/remotecontrol/buttons`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error('리모콘 설정 저장 실패');
-    const data = await res.json();
-    const saved = data?.settings ?? data?.Settings ?? body;
-    setRemoteButtons(normalizeRemoteButtons(saved));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || '리모콘 설정 저장 실패');
+    }
+    await res.json().catch(() => ({}));
+    // 서버 echo로 setState 하면 요청/응답 순서가 어긋날 때 이전 응답이 최신 행을 지움 → 성공 시 방금 보낸 스냅샷만 반영
+    if (seq !== remoteSaveSeqRef.current) return;
+    setRemotes(snapshot);
   };
 
-  const handleRemoteNameBlurSave = async () => {
+  const handleAddRemoteRow = async () => {
+    const row: RemoteRow = { id: newRemoteId(), name: '', bellCode: '', enabled: true };
+    const next = [...remotesRef.current, row];
+    setRemotes(next);
     try {
-      await saveRemoteButtons(remoteButtons);
+      await saveRemotes(next);
     } catch (e) {
       console.error(e);
-      await showCustomAlert('리모콘 이름 저장에 실패했습니다.');
-      // 필요하면 서버 값을 다시 로드
-      await loadRemoteButtons();
+      await showCustomAlert(e instanceof Error ? e.message : '리모콘 추가 저장에 실패했습니다.');
+      await loadRemotes();
     }
   };
 
-  const handleRemoteEditCode = async (number: number) => {
-    const current = remoteButtons.find(b => b.number === number);
-    const next = await showCustomPrompt({
-      title: `리모콘 ${number}번 발송코드`,
-      message: '시리얼로 그대로 송신합니다. (\\r은 자동으로 붙습니다)',
-      placeholder: '예) 26020011.bell=123',
-      defaultValue: current?.sendCode ?? '',
-    });
-    if (next == null) return;
-    const updated = remoteButtons.map(b => (b.number === number ? { ...b, sendCode: next } : b));
-    setRemoteButtons(updated);
+  const handleDeleteRemoteRow = async (id: string) => {
+    const ok = await showCustomConfirm('이 리모콘 줄을 삭제할까요?');
+    if (!ok) return;
+    const next = remotesRef.current.filter((r) => r.id !== id);
+    setRemotes(next);
     try {
-      await saveRemoteButtons(updated);
+      await saveRemotes(next);
     } catch (e) {
       console.error(e);
-      await showCustomAlert('발송코드 저장에 실패했습니다.');
-      await loadRemoteButtons();
+      await showCustomAlert(e instanceof Error ? e.message : '삭제에 실패했습니다.');
+      await loadRemotes();
     }
   };
 
-  const handleRemoteTestSend = async (number: number) => {
+  const handleRemoteBlurSave = async () => {
     try {
-      const apiUrl = await getApiBaseUrl();
-      const res = await fetch(`${apiUrl}/api/remotecontrol/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ number }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = data?.message ?? data?.Message ?? '송신 실패';
-        throw new Error(msg);
-      }
-      await showCustomAlert(`테스트 송신 완료 (포트: ${data?.portName ?? data?.PortName ?? ''})`);
+      await saveRemotes(remotesRef.current);
     } catch (e) {
       console.error(e);
-      await showCustomAlert(e instanceof Error ? e.message : '테스트 송신 실패');
+      await showCustomAlert(e instanceof Error ? e.message : '리모콘 저장에 실패했습니다.');
+      await loadRemotes();
     }
   };
+
+  useEffect(() => {
+    if (activeTab !== 'remote') setRemoteRegisterModalId(null);
+  }, [activeTab]);
 
   const loadTTSEnabled = async () => {
     try {
@@ -839,7 +965,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       setUploadConfig({
         phrases: phrasesData.phrases || [],
         serial: { ports: serialData.ports || [] },
-        remoteControl: { buttons: remoteData.buttons || [] },
+        remoteControl: { remotes: Array.isArray(remoteData.remotes) ? remoteData.remotes : [] },
       });
       setShowUploadModal(true);
     } catch (e) {
@@ -889,32 +1015,8 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
             <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <h1>기능 설정</h1>
+        <h1>설정</h1>
         <div className="header-actions">
-          <button
-            type="button"
-            className="settings-button"
-            onClick={async () => { await saveAppRuntime(); }}
-            title="앱 타이틀/고객센터 문구 저장"
-          >
-            기본설정 저장
-          </button>
-          <button 
-            className="serial-port-button"
-            onClick={() => setIsSerialPortModalOpen(true)}
-            title="시리얼 포트 설정"
-          >
-            시리얼포트 설정
-          </button>
-          <label className="tts-toggle-label">
-            <span>TTS</span>
-            <input
-              type="checkbox"
-              checked={ttsEnabled}
-              onChange={handleToggleTTS}
-              className="tts-toggle-switch"
-            />
-          </label>
           <button 
             className="close-button"
             onClick={handleClose}
@@ -928,44 +1030,52 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
       </div>
 
       <div className="settings-content">
-        <div className="settings-section">
-          <div className="section-header">
-            <h2>기본 설정</h2>
-          </div>
-          <div className="form-group">
-            <label>앱 타이틀</label>
-            <input type="text" value={appTitle} onChange={e => setAppTitle(e.target.value)} placeholder="장애인도움요청" />
-          </div>
-          <div className="form-group">
-            <label>알림창 타이틀</label>
-            <input type="text" value={notifyTitle} onChange={e => setNotifyTitle(e.target.value)} placeholder="장애인도움요청" />
-          </div>
-          <div className="form-group">
-            <label>고객센터 문구 (알림창 좌측 하단)</label>
-            <input type="text" value={callTelText} onChange={e => setCallTelText(e.target.value)} placeholder="" />
-          </div>
-        </div>
-
-        <div className="settings-tabs">
+        <div className="settings-tabs settings-tabs-main">
           <button
             type="button"
-            className={`settings-tab ${activeTab === 'phrases' ? 'active' : ''}`}
-            onClick={() => setActiveTab('phrases')}
+            className={`settings-tab ${activeTab === 'bell' ? 'active' : ''}`}
+            onClick={() => setActiveTab('bell')}
           >
-            문구 관리
+            문구 설정
           </button>
           <button
             type="button"
             className={`settings-tab ${activeTab === 'remote' ? 'active' : ''}`}
             onClick={() => setActiveTab('remote')}
           >
-            리모콘 설정 (1~15)
+            리모콘 설정
+          </button>
+          <button
+            type="button"
+            className={`settings-tab ${activeTab === 'module' ? 'active' : ''}`}
+            onClick={() => setActiveTab('module')}
+          >
+            모듈 설정
+          </button>
+          <button
+            type="button"
+            className={`settings-tab ${activeTab === 'system' ? 'active' : ''}`}
+            onClick={() => setActiveTab('system')}
+          >
+            시스템 설정
           </button>
         </div>
 
-        {activeTab === 'phrases' && (
+        {activeTab === 'bell' && (
         <div className="settings-section">
           <div className="section-header">
+            <h2>문구 설정</h2>
+            <label className="tts-toggle-label">
+              <span>TTS</span>
+              <input
+                type="checkbox"
+                checked={ttsEnabled}
+                onChange={handleToggleTTS}
+                className="tts-toggle-switch"
+              />
+            </label>
+          </div>
+          <div className="section-header section-header-sub">
             <h2>문구 관리</h2>
             <button className="add-button" onClick={handleAddPhrase}>
               + 문구 추가
@@ -1073,39 +1183,260 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
 
         {activeTab === 'remote' && (
         <div className="settings-section remote-section">
-          <div className="section-header">
-            <h2>리모콘 설정 (1~15)</h2>
+          <div className="section-header section-header-sub">
+            <h2>리모콘 관리</h2>
+            <button
+              type="button"
+              className="add-button remote-add-trigger"
+              onPointerDown={() => {
+                suppressRemoteBlurSaveRef.current = true;
+              }}
+              onClick={() => void handleAddRemoteRow()}
+            >
+              + 리모콘 추가
+            </button>
           </div>
+          <p className="remote-section-hint">
+            한 줄에 리모콘 하나와 벨 코드를 1:1로 연결합니다. 「리모콘 등록」을 누르면 문구의 벨 등록과 같이 수신 창이 열리며, 수신된 코드가 해당 줄의 벨 코드로 저장됩니다. 필요하면 칸에 직접 입력·수정할 수 있습니다.
+          </p>
           <div className="remote-list">
-            {remoteButtons.map((b) => (
-              <div key={b.number} className="remote-item">
-                <div className="remote-left">
-                  <div className="remote-number">{b.number}</div>
-                  <input
-                    className="remote-name"
-                    type="text"
-                    value={b.name}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setRemoteButtons(prev => prev.map(x => (x.number === b.number ? { ...x, name: v } : x)));
-                    }}
-                    onBlur={() => handleRemoteNameBlurSave()}
-                    placeholder="이름"
-                  />
-                </div>
-                <div className="remote-code" title={b.sendCode || ''}>
-                  {b.sendCode ? b.sendCode : <span className="remote-code-empty">발송코드 없음</span>}
-                </div>
-                <div className="remote-actions">
-                  <button className="edit-button" type="button" onClick={() => handleRemoteEditCode(b.number)}>
-                    발송코드 편집
-                  </button>
-                  <button className="notification-test-button" type="button" onClick={() => handleRemoteTestSend(b.number)}>
-                    테스트 송신
-                  </button>
-                </div>
+            {remotes.length === 0 ? (
+              <div className="empty-state">
+                <p>등록된 리모콘이 없습니다.</p>
+                <button
+                  type="button"
+                  className="add-button remote-add-trigger"
+                  onPointerDown={() => {
+                    suppressRemoteBlurSaveRef.current = true;
+                  }}
+                  onClick={() => void handleAddRemoteRow()}
+                >
+                  리모콘 추가하기
+                </button>
               </div>
-            ))}
+            ) : (
+              remotes.map((r) => (
+                <div key={r.id} className="remote-item remote-item-dynamic">
+                  <div className="remote-left">
+                    <input
+                      className="remote-name"
+                      type="text"
+                      value={r.name}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setRemotes((prev) => prev.map((x) => (x.id === r.id ? { ...x, name: v } : x)));
+                      }}
+                      onBlur={(e) => {
+                        const rel = e.relatedTarget as HTMLElement | null;
+                        if (rel?.closest?.('.remote-add-trigger')) {
+                          suppressRemoteBlurSaveRef.current = false;
+                          return;
+                        }
+                        if (suppressRemoteBlurSaveRef.current) {
+                          suppressRemoteBlurSaveRef.current = false;
+                          return;
+                        }
+                        void handleRemoteBlurSave();
+                      }}
+                      placeholder="리모콘 명칭"
+                    />
+                  </div>
+                  <div className="remote-middle">
+                    <input
+                      className="remote-sendcode"
+                      type="text"
+                      value={r.bellCode}
+                      title={r.bellCode || '벨 코드'}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setRemotes((prev) => prev.map((x) => (x.id === r.id ? { ...x, bellCode: v } : x)));
+                      }}
+                      onBlur={(e) => {
+                        const rel = e.relatedTarget as HTMLElement | null;
+                        if (rel?.closest?.('.remote-add-trigger')) {
+                          suppressRemoteBlurSaveRef.current = false;
+                          return;
+                        }
+                        if (suppressRemoteBlurSaveRef.current) {
+                          suppressRemoteBlurSaveRef.current = false;
+                          return;
+                        }
+                        void handleRemoteBlurSave();
+                      }}
+                      placeholder="벨 코드"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="bell-add-button"
+                      onClick={() => setRemoteRegisterModalId(r.id)}
+                    >
+                      리모콘 등록
+                    </button>
+                  </div>
+                  <div className="remote-actions">
+                    <label className="remote-enabled-label">
+                      <input
+                        type="checkbox"
+                        checked={r.enabled}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setRemotes((prev) => {
+                            const next = prev.map((x) => (x.id === r.id ? { ...x, enabled: checked } : x));
+                            void saveRemotes(next).catch(async (err) => {
+                              console.error(err);
+                              await showCustomAlert(err instanceof Error ? err.message : '저장에 실패했습니다.');
+                              await loadRemotes();
+                            });
+                            return next;
+                          });
+                        }}
+                      />
+                      사용
+                    </label>
+                    <button
+                      type="button"
+                      className="delete-button"
+                      onClick={() => void handleDeleteRemoteRow(r.id)}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        )}
+
+        {activeTab === 'module' && (
+        <div className="settings-section module-section">
+          <div className="section-header">
+            <h2>모듈 설정</h2>
+          </div>
+          <p className="module-hint">시리얼(COM) 및 TCP/UDP 네트워크 수신 링크를 설정합니다.</p>
+          <div className="settings-tabs module-subtabs">
+            <button
+              type="button"
+              className={`settings-tab ${moduleSubTab === 'serial' ? 'active' : ''}`}
+              onClick={() => setModuleSubTab('serial')}
+            >
+              시리얼 포트 설정
+            </button>
+            <button
+              type="button"
+              className={`settings-tab ${moduleSubTab === 'tcp' ? 'active' : ''}`}
+              onClick={() => setModuleSubTab('tcp')}
+            >
+              TCP/UDP
+            </button>
+          </div>
+          {moduleSubTab === 'serial' && (
+            <div className="serial-port-modal module-serial-embed">
+              <SerialPortSettingsPanel variant="page" />
+            </div>
+          )}
+          {moduleSubTab === 'tcp' && <TcpSerialPortSettings />}
+        </div>
+        )}
+
+        {activeTab === 'system' && (
+        <div className="settings-section system-section">
+          <div className="section-header">
+            <h2>시스템 설정</h2>
+          </div>
+          <div className="form-group">
+            <label>앱·창 제목</label>
+            <input type="text" value={appTitle} onChange={(e) => setAppTitle(e.target.value)} placeholder="장애인도움요청" />
+          </div>
+          <div className="form-group">
+            <label>알림창 타이틀</label>
+            <input type="text" value={notifyTitle} onChange={(e) => setNotifyTitle(e.target.value)} placeholder="장애인도움요청" />
+          </div>
+          <div className="form-group">
+            <label>고객센터 문구 (알림창 좌측 하단)</label>
+            <input type="text" value={callTelText} onChange={(e) => setCallTelText(e.target.value)} placeholder="" />
+          </div>
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={serialEncryptionEnabled}
+                onChange={(e) => setSerialEncryptionEnabled(e.target.checked)}
+              />
+              시리얼 암호화(보안) 사용 — 켜면 포트별 &quot;보안(암호화) 사용&quot; 설정이 적용됩니다. 기본은 꺼짐(OFF)입니다.
+            </label>
+          </div>
+          <div className="form-group inline-actions">
+            <label>시스템 비밀번호</label>
+            <div className="inline-action-row">
+              <input type="text" value="********" readOnly />
+              <button type="button" className="settings-button" onClick={() => setShowPasswordChangeModal(true)}>
+                비밀번호 변경
+              </button>
+            </div>
+          </div>
+          <div className="form-group system-tray-group">
+            <label>트레이·창 아이콘</label>
+            <p className="system-tray-hint">
+              Windows 트레이 및 창 아이콘용 .ico 파일만 등록할 수 있습니다. 트레이 모양은 앱을 다시 시작한 뒤 반영됩니다.
+            </p>
+            <div className="system-tray-row">
+              {trayPreviewUrl ? (
+                <img
+                  src={trayPreviewUrl}
+                  alt=""
+                  className="system-tray-preview"
+                  onError={(ev) => {
+                    (ev.target as HTMLImageElement).style.visibility = 'hidden';
+                  }}
+                />
+              ) : null}
+              <div
+                role="presentation"
+                className={`system-tray-dropzone ${trayDragOver ? 'drag-over' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTrayDragOver(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTrayDragOver(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTrayDragOver(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) void uploadTrayIcoFile(f);
+                }}
+              >
+                <span className="system-tray-dropzone-text">.ico 파일을 여기에 놓으세요</span>
+              </div>
+            </div>
+            <div className="system-tray-actions">
+              <input
+                ref={trayFileInputRef}
+                type="file"
+                accept=".ico"
+                className="system-tray-file-input"
+                onChange={handleTrayIconFileInput}
+              />
+              <button type="button" className="settings-button" onClick={() => trayFileInputRef.current?.click()}>
+                파일 불러오기
+              </button>
+              <button type="button" className="settings-neutral-btn system-tray-reset-btn" onClick={() => void handleResetTrayIcon()}>
+                기본 아이콘
+              </button>
+            </div>
+          </div>
+          <div className="system-save-row">
+            <button type="button" className="settings-primary-btn" onClick={() => void saveAppRuntime()}>
+              이름·문구 저장
+            </button>
           </div>
         </div>
         )}
@@ -1130,12 +1461,6 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
         />
       )}
 
-      {isSerialPortModalOpen && (
-        <SerialPortModal
-          onClose={() => setIsSerialPortModalOpen(false)}
-        />
-      )}
-
       {isBellAddModalOpen && currentPhraseForBell && (
         <BellAddModal
           onAdd={(bellCode) => {
@@ -1146,6 +1471,38 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
             setCurrentPhraseForBell(null);
             await loadPhrases();
           }}
+        />
+      )}
+
+      {remoteRegisterModalId != null && (
+        <BellAddModal
+          key={`remote-reg-${remoteRegisterModalId}`}
+          title="리모콘 등록"
+          listeningMessage="리모콘(벨)을 누르세요"
+          completedMessage="등록 완료"
+          onAdd={async (bellCode) => {
+            const rowId = remoteRegisterModalId;
+            if (!rowId) return;
+            const trimmed = String(bellCode).trim().toLowerCase();
+            if (!trimmed) return;
+            const cur = remotesRef.current;
+            const dup = cur.some((x) => x.id !== rowId && x.bellCode && x.bellCode === trimmed);
+            if (dup) {
+              await showCustomAlert('이미 다른 리모콘에 등록된 벨 코드입니다.');
+              return;
+            }
+            const next = cur.map((x) => (x.id === rowId ? { ...x, bellCode: trimmed } : x));
+            setRemotes(next);
+            try {
+              await saveRemotes(next);
+              setRemoteRegisterModalId(null);
+            } catch (e) {
+              console.error(e);
+              await showCustomAlert(e instanceof Error ? e.message : '저장에 실패했습니다.');
+              await loadRemotes();
+            }
+          }}
+          onClose={() => setRemoteRegisterModalId(null)}
         />
       )}
 
@@ -1214,13 +1571,13 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
                 setid,
                 phrases: config.phrases,
                 serial: config.serial,
-                remoteControl: config.remoteControl || { buttons: [] }
+                ...remoteControlForSettingsApply(config.remoteControl),
               }),
             });
             if (!res.ok) throw new Error('설정 적용 실패');
             await loadPhrases();
             await loadActiveSetId();
-            await loadRemoteButtons();
+            await loadRemotes();
             try {
               await lnms.lnmsRegisterAgent(`${apiUrl.replace(/\/$/, '')}/api/broadcast/receive`, setid, selectedStoreId ?? undefined);
             } catch {
@@ -1254,7 +1611,7 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
               {
                 phrases,
                 serial: uploadConfig.serial ?? { ports: [] },
-                remoteControl: uploadConfig.remoteControl ?? { buttons: [] }
+                remoteControl: uploadConfig.remoteControl ?? { remotes: [] }
               },
               loginId.trim() || undefined
             );
@@ -1262,6 +1619,53 @@ function SettingsView({ onNavigateBack }: SettingsViewProps) {
           }}
           currentConfig={uploadConfig}
         />
+      )}
+
+      {showPasswordChangeModal && (
+        <div className="modal-overlay" onClick={() => setShowPasswordChangeModal(false)}>
+          <div className="modal-content settings-login-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>시스템 비밀번호 변경</h2>
+              <button className="modal-close" onClick={() => setShowPasswordChangeModal(false)}>×</button>
+            </div>
+            <div className="modal-form">
+              <div className="form-group">
+                <label>새 비밀번호</label>
+                <input
+                  type="password"
+                  value={newSystemPassword}
+                  onChange={e => setNewSystemPassword(e.target.value)}
+                  placeholder="새 비밀번호"
+                />
+              </div>
+              <div className="form-group">
+                <label>새 비밀번호 확인</label>
+                <input
+                  type="password"
+                  value={confirmSystemPassword}
+                  onChange={e => setConfirmSystemPassword(e.target.value)}
+                  placeholder="한 번 더 입력"
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="cancel-button"
+                  onClick={() => {
+                    setShowPasswordChangeModal(false);
+                    setNewSystemPassword('');
+                    setConfirmSystemPassword('');
+                  }}
+                >
+                  취소
+                </button>
+                <button type="button" className="save-button" onClick={handleChangeSystemPassword}>
+                  변경
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

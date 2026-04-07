@@ -1,0 +1,22 @@
+# LnuploaderFtp — 복사 후 upload.ini 로 이름 변경해 사용
+# 실행: LnuploaderFtp.exe
+# 또는: LnuploaderFtp.exe "C:\path\to\upload.ini"
+# 로그: INI와 같은 폴더에 upload_YYYYMMDD.log (SSH.NET SFTP + 파일별 업로드 시간)
+
+[ftp]
+host=sftp.example.com
+port=22
+user=myuser
+password=mypassword
+# SFTP 로그인 후 홈(WorkingDirectory) 기준 하위 경로 (앞 슬래시 없이)
+destfolder=lnsmsacc
+
+[paths]
+# lunar-agent-acc-web: build-installer.bat 과 동일한 publish 출력 (절대 경로 권장)
+# 예: c:\rc\lunar-sms\lunar-agent-acc-web\CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish
+localFolder=..\lunar-agent-acc-web\CareReceiverAgent.Host\bin\Release\net9.0-windows\win-x64\publish
+# 제외 glob 파일 (INI와 같은 폴더). 없으면 내장 기본 제외. none 이면 전체 업로드
+ignoreFile=upload.ignore
+# (선택) LnUpdater 클라이언트 런처와 같은 INI를 쓸 때: 받을 폴더·실행 exe — 업로더는 무시
+# localRoot=c:\lnsmsacc
+# hostExe=CareReceiverAgent.Host.exe

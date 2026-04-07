@@ -209,9 +209,85 @@
   cursor: pointer;
 }
 
+.notification-remote-button {
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(52, 199, 89, 0.25);
+  border: 1px solid rgba(52, 199, 89, 0.65);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.notification-remote-button.active,
+.notification-remote-button:hover {
+  background: rgba(52, 199, 89, 0.42);
+}
+
 .notification-login-button:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.8);
+}
+
+.notification-remote-pad {
+  position: absolute;
+  right: 20px;
+  top: 120px;
+  width: 220px;
+  padding: 14px;
+  background: rgba(10, 10, 12, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  z-index: 15;
+}
+
+.notification-remote-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.notification-remote-key {
+  height: 46px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(0, 122, 255, 0.8);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.notification-remote-key:hover:not(:disabled) {
+  background: rgba(0, 122, 255, 1);
+}
+
+.notification-remote-key:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.notification-toast {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  z-index: 30;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.notification-toast.ok {
+  background: rgba(52, 199, 89, 0.92);
+}
+
+.notification-toast.error {
+  background: rgba(255, 59, 48, 0.94);
 }
 
 .notification-download-controls {
@@ -283,19 +359,19 @@
 }
 
 .notification-settings-icon {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  background-color: transparent;
-  border: none;
+  background-color: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 10px;
   cursor: pointer;
-  color: #007AFF;
+  color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: opacity 0.2s;
-  position: absolute;
-  right: 40px;
+  position: static;
 }
 
 .notification-settings-icon:hover {

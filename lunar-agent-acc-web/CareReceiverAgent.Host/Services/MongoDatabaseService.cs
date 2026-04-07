@@ -68,6 +68,7 @@ namespace CareReceiverAgent.Host.Services
                 BaudRate = p.BaudRate,
                 AutoConnect = p.AutoConnect,
                 SecureEnabled = p.SecureEnabled,
+                AllowLegacyBellDecrypt = p.AllowLegacyBellDecrypt,
                 DeviceSerialNumber = p.DeviceSerialNumber ?? "00000000"
             }).ToList();
             return new SerialSettings { Ports = ports };
@@ -88,6 +89,7 @@ namespace CareReceiverAgent.Host.Services
                 BaudRate = p.BaudRate,
                 AutoConnect = p.AutoConnect,
                 SecureEnabled = p.SecureEnabled,
+                AllowLegacyBellDecrypt = p.AllowLegacyBellDecrypt,
                 DeviceSerialNumber = p.DeviceSerialNumber ?? "00000000"
             }).ToList();
 

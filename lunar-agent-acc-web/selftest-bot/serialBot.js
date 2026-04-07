@@ -35,7 +35,8 @@ function toHexPairs(buf) {
  *
  * Host 기준 프로토콜(v4, sn prefix):
  * - PC -> Care Receiver: "<sn>\r" (sn 미확정이면 "00000000\r")
- * - Care Receiver -> PC: "<sn>.ok\r", "<sn>.ready\r", "<sn>.bell=xxxxxy\r", "<sn>.assist\r"
+ * - Care Receiver -> PC: "<sn>.ok\r" (PC가 보낸 8자리와 동일 접두, 예: "00000000\r" → "00000000.ok\r"),
+ *   "<sn>.ready\r", "<sn>.bell=xxxxxy\r", "<sn>.assist\r", 암호화 시 "<sn>.<32hex>\r"
  * - 라인 구분자는 \r 이 기본이며, \n은 무시 가능
  */
 class SerialCareReceiverBot {
@@ -165,10 +166,10 @@ class SerialCareReceiverBot {
       return;
     }
 
-    // v4 통신 체크: "<sn>" 또는 "00000000"
-    if (/^\d{8}$/.test(line)) {
+    // v4 통신 체크: "<sn>" 또는 "00000000" — 실제 모듈은 수신 시리얼과 동일 접두로 "<sn>.ok" 응답
+    if (/^(\d{8})$/.test(line)) {
       this._receivedCrcvCheck += 1;
-      await this.sendLine(`${this.deviceSerial}.ok`);
+      await this.sendLine(`${line}.ok`);
       return;
     }
 

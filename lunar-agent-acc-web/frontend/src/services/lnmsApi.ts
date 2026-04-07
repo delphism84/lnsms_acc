@@ -25,6 +25,14 @@ async function getLnmsRemoteProxyBase(): Promise<string> {
   return `${api.replace(/\/$/, '')}/api/lnsms-remote`;
 }
 
+function assertNotIndexHtmlResponse(res: Response, url: string) {
+  const ct = res.headers.get('content-type') || '';
+  // 라우팅이 아직 반영되지 않은 구(舊) 호스트에서는 컨트롤러 대신 SPA index.html이 내려오는 경우가 있음
+  if (ct.includes('text/html')) {
+    throw new Error(`프록시가 정상 동작하지 않습니다(요청: ${url}). 호스트를 재시작하세요.`);
+  }
+}
+
 export interface SetItem {
   setid: string;
   userid?: string;
@@ -36,7 +44,7 @@ export interface SetConfig {
   setid: string;
   phrases: unknown[];
   serial: { ports: unknown[] };
-  remoteControl?: { buttons: unknown[] };
+  remoteControl?: { remotes?: unknown[]; buttons?: unknown[] };
 }
 
 export interface StoreInfo {
@@ -52,6 +60,7 @@ export async function lnmsLogin(userid: string, userpw: string, opts?: { useRemo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userid, userpw }),
   });
+  assertNotIndexHtmlResponse(res, `${base}/auth/login`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { success: false };
   return { success: !!data.success, userid: data.userid };
@@ -62,6 +71,7 @@ export async function lnmsListSets(userid?: string, opts?: { useRemote?: boolean
   const base = opts?.useRemote ? await getLnmsRemoteProxyBase() : getLnmsBase();
   const url = userid ? `${base}/sets?userid=${encodeURIComponent(userid)}` : `${base}/sets`;
   const res = await fetch(url);
+  assertNotIndexHtmlResponse(res, url);
   if (!res.ok) throw new Error('세트 목록 조회 실패');
   const data = await res.json();
   return Array.isArray(data) ? data : data.sets || [];
@@ -71,6 +81,7 @@ export async function lnmsListSets(userid?: string, opts?: { useRemote?: boolean
 export async function lnmsGetStore(storeid: string): Promise<StoreInfo> {
   const base = await getLnmsRemoteProxyBase();
   const res = await fetch(`${base}/store/${encodeURIComponent(storeid)}`);
+  assertNotIndexHtmlResponse(res, `${base}/store/${encodeURIComponent(storeid)}`);
   if (!res.ok) throw new Error('매장 조회 실패');
   return res.json();
 }
@@ -79,6 +90,7 @@ export async function lnmsGetStore(storeid: string): Promise<StoreInfo> {
 export async function lnmsGetStores(userid: string): Promise<StoreInfo[]> {
   const base = await getLnmsRemoteProxyBase();
   const res = await fetch(`${base}/store?userid=${encodeURIComponent(userid)}`);
+  assertNotIndexHtmlResponse(res, `${base}/store?userid=${encodeURIComponent(userid)}`);
   if (!res.ok) throw new Error('매장 목록 조회 실패');
   const data = await res.json();
   return Array.isArray(data) ? data : [];
@@ -90,6 +102,7 @@ export async function lnmsGetSetConfig(setid: string, userid?: string): Promise<
     ? `${base}/sets/${encodeURIComponent(setid)}/config?userid=${encodeURIComponent(userid)}`
     : `${base}/sets/${encodeURIComponent(setid)}/config`;
   const res = await fetch(url);
+  assertNotIndexHtmlResponse(res, url);
   if (!res.ok) throw new Error('세트 설정 조회 실패');
   return res.json();
 }
@@ -97,7 +110,7 @@ export async function lnmsGetSetConfig(setid: string, userid?: string): Promise<
 /** 운영 서버로 세트 설정 저장(업로드) */
 export async function lnmsSaveSetConfig(
   setid: string,
-  config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { buttons: unknown[] } },
+  config: { phrases: unknown[]; serial: { ports: unknown[] }; remoteControl?: { remotes?: unknown[] } },
   userid?: string
 ): Promise<void> {
   const base = await getLnmsRemoteProxyBase();
@@ -106,6 +119,7 @@ export async function lnmsSaveSetConfig(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userid ? { ...config, userid } : config),
   });
+  assertNotIndexHtmlResponse(res, `${base}/sets/${encodeURIComponent(setid)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || '세트 저장 실패');
@@ -120,6 +134,7 @@ export async function lnmsCreateSet(setid: string, userid: string): Promise<void
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ setid, userid }),
   });
+  assertNotIndexHtmlResponse(res, `${base}/sets`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || '세트 생성 실패');

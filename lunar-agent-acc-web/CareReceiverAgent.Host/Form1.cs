@@ -38,8 +38,8 @@ public partial class Form1 : Form
             ? "https://admin.necall.com"
             : cfg.LnsmsRemoteUploadBase.Trim();
 
-        // 창 제목 설정
-        this.Text = cfg.Title;
+        // 창 제목: app.json 타이틀 + 소스(마지막 커밋 시각) / 컴파일 UTC (설치·빌드 확인)
+        this.Text = BuildStamp.FormatWindowTitle(cfg.Title);
 
         // 초기에는 알림창을 띄움(요구사항)
         this.WindowState = FormWindowState.Normal;
@@ -138,6 +138,34 @@ public partial class Form1 : Form
         }
     }
 
+    private static string? ResolveTrayIconPath(Services.AppRuntimeConfig cfg)
+    {
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var resDir = Path.GetFullPath(Path.Combine(baseDir, "resource"));
+
+        string? tryUnderResource(string? fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return null;
+            var n = fileName.Trim();
+            if (n.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || n.Contains("..", StringComparison.Ordinal))
+                return null;
+            var full = Path.GetFullPath(Path.Combine(resDir, n));
+            if (!full.StartsWith(resDir, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return File.Exists(full) ? full : null;
+        }
+
+        var primary = tryUnderResource(cfg.TrayIconFileName);
+        if (primary != null)
+            return primary;
+        var fb = tryUnderResource("appicon.ico");
+        if (fb != null)
+            return fb;
+        var appIco = Path.Combine(baseDir, "app.ico");
+        return File.Exists(appIco) ? appIco : null;
+    }
+
     private void InitializeTrayIcon()
     {
         try
@@ -148,13 +176,12 @@ public partial class Form1 : Form
                 this.components = new System.ComponentModel.Container();
             }
 
-            // 아이콘 파일 로드 (resource/appicon.ico 우선, 없으면 app.ico, 마지막으로 기본 아이콘)
+            // 아이콘: app.json의 TrayIconFileName → resource/appicon.ico → app.ico
             Icon? trayIcon = null;
-            var resourceIcoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resource", "appicon.ico");
-            var fallbackIcoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
-            var iconPath = File.Exists(resourceIcoPath) ? resourceIcoPath : fallbackIcoPath;
+            var cfg = Services.AppRuntimeConfig.Load();
+            var iconPath = ResolveTrayIconPath(cfg);
 
-            if (File.Exists(iconPath))
+            if (iconPath != null && File.Exists(iconPath))
             {
                 try
                 {
@@ -169,7 +196,7 @@ public partial class Form1 : Form
             _notifyIcon = new NotifyIcon(this.components)
             {
                 Icon = trayIcon ?? SystemIcons.Application,
-                Text = Services.AppRuntimeConfig.Load().Title
+                Text = BuildStamp.FormatTrayText(cfg.Title)
             };
 
             // 폼 아이콘도 동일하게 설정
@@ -372,7 +399,8 @@ public partial class Form1 : Form
     {
         if (e.IsSuccess)
         {
-            this.Text = "장애인 도움요청 시스팀";
+            var cfg = Services.AppRuntimeConfig.Load();
+            this.Text = BuildStamp.FormatWindowTitle(cfg.Title);
             // 페이지 로드 완료 후 보안 스크립트 주입
             await InjectSecurityScripts();
         }

@@ -6,6 +6,13 @@ import { showCustomPrompt } from './CustomPrompt';
 import * as lnms from '../services/lnmsApi';
 import '../styles/NotificationView.css';
 
+function remoteControlForSettingsApply(rc: unknown): { remoteControl?: { remotes: unknown[] } } {
+  if (!rc || typeof rc !== 'object') return {};
+  const remotes = (rc as { remotes?: unknown }).remotes;
+  if (Array.isArray(remotes)) return { remoteControl: { remotes } };
+  return {};
+}
+
 interface NotificationViewProps {
   onNavigateToSettings: () => void;
 }
@@ -18,6 +25,13 @@ interface UidNotification {
   autoCloseSeconds?: number;
   imageUrl?: string | null;
 }
+
+type RemoteEntry = {
+  id: string;
+  name: string;
+  bellCode: string;
+  enabled: boolean;
+};
 
 function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
   // BE가 관리하는 uid 맵을 그대로 표시 (현재 1건 + 대기 건수)
@@ -36,6 +50,12 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [downloadSetList, setDownloadSetList] = useState<string[]>([]);
   const [selectedDownloadSetId, setSelectedDownloadSetId] = useState('');
+  const [systemAccessPassword, setSystemAccessPassword] = useState('8206');
+  const [showRemotePad, setShowRemotePad] = useState(false);
+  const [remotes, setRemotes] = useState<RemoteEntry[]>([]);
+  const [remoteSendingKey, setRemoteSendingKey] = useState<number | null>(null);
+  const [toastMsg, setToastMsg] = useState('');
+  const [toastType, setToastType] = useState<'ok' | 'error'>('ok');
 
   const AUTO_LOGIN_KEY = 'lnsms_agent_auto_login';
 
@@ -55,6 +75,9 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
             }
             if (typeof cfg?.systemNotifyCallTelText === 'string') {
               setSystemNotifyCallTelText(cfg.systemNotifyCallTelText);
+            }
+            if (typeof cfg?.systemAccessPassword === 'string' && cfg.systemAccessPassword.trim()) {
+              setSystemAccessPassword(cfg.systemAccessPassword.trim());
             }
           }
         } catch {
@@ -121,6 +144,34 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
       // 정리
     };
   }, []);
+
+  useEffect(() => {
+    const loadRemotes = async () => {
+      try {
+        const apiUrl = await getApiBaseUrl();
+        const res = await fetch(`${apiUrl}/api/remotecontrol/buttons`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const raw = Array.isArray(data?.remotes) ? data.remotes : [];
+        const list: RemoteEntry[] = raw.map((r: any, i: number) => ({
+          id: String(r?.id ?? r?.Id ?? `r-${i}`),
+          name: String(r?.name ?? r?.Name ?? ''),
+          bellCode: String(r?.bellCode ?? r?.BellCode ?? '').trim().toLowerCase(),
+          enabled: r?.enabled !== false && r?.Enabled !== false,
+        }));
+        setRemotes(list);
+      } catch {
+        // ignore
+      }
+    };
+    loadRemotes();
+  }, []);
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const t = window.setTimeout(() => setToastMsg(''), 1800);
+    return () => window.clearTimeout(t);
+  }, [toastMsg]);
 
   // 저장된 계정이 있으면 자동 로그인(알림창에서도)
   useEffect(() => {
@@ -216,7 +267,7 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
           setid,
           phrases: cfg.phrases,
           serial: cfg.serial,
-          remoteControl: cfg.remoteControl || { buttons: [] }
+          ...remoteControlForSettingsApply(cfg.remoteControl),
         }),
       });
       if (!res.ok) throw new Error('설정 적용 실패');
@@ -334,12 +385,48 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
       password: true,
     });
     if (pw === null) return;
-    if (String(pw).trim() !== '8206') {
+    if (String(pw).trim() !== systemAccessPassword) {
       await showCustomAlert('비밀번호가 올바르지 않습니다.');
       return;
     }
 
     onNavigateToSettings();
+  };
+
+  const showToast = (message: string, type: 'ok' | 'error' = 'ok') => {
+    setToastType(type);
+    setToastMsg(message);
+  };
+
+  const handleRemotePadClick = async (keyIndex: number) => {
+    if (remoteSendingKey != null) return;
+    const enabled = remotes.filter((r) => r.enabled);
+    const target = enabled[keyIndex - 1];
+    if (!target?.bellCode) {
+      showToast(`${keyIndex}번 키에 연결된 벨코드가 없습니다.`, 'error');
+      return;
+    }
+    try {
+      setRemoteSendingKey(keyIndex);
+      const apiUrl = await getApiBaseUrl();
+      const remoteKey = String(keyIndex).padStart(4, '0');
+      const res = await fetch(`${apiUrl}/api/remotecontrol/tx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bellCode: target.bellCode,
+          keyIndex,
+          remoteKey,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.message || '리모콘 TX 실패');
+      showToast(`${keyIndex}번 전송 완료`, 'ok');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '리모콘 전송 실패', 'error');
+    } finally {
+      setRemoteSendingKey(null);
+    }
   };
 
   return (
@@ -420,6 +507,14 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
         </div>
 
         <div className="notification-right-actions">
+          <button
+            className={`notification-remote-button ${showRemotePad ? 'active' : ''}`}
+            type="button"
+            onClick={() => setShowRemotePad((v) => !v)}
+            title="리모콘 패널"
+          >
+            리모콘
+          </button>
           <button
             className="notification-login-button"
             type="button"
@@ -506,6 +601,35 @@ function NotificationView({ onNavigateToSettings }: NotificationViewProps) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {showRemotePad && (
+        <div className="notification-remote-pad">
+          <div className="notification-remote-pad-grid">
+            {Array.from({ length: 8 }, (_, i) => {
+              const keyNo = i + 1;
+              const mapped = remotes.filter((r) => r.enabled)[i];
+              return (
+                <button
+                  key={keyNo}
+                  type="button"
+                  className="notification-remote-key"
+                  disabled={remoteSendingKey != null}
+                  onClick={() => void handleRemotePadClick(keyNo)}
+                  title={mapped?.bellCode || '미연결'}
+                >
+                  {keyNo}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {toastMsg && (
+        <div className={`notification-toast ${toastType === 'error' ? 'error' : 'ok'}`}>
+          {toastMsg}
         </div>
       )}
     </div>

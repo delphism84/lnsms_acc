@@ -2,16 +2,18 @@ using System.Collections.Generic;
 
 namespace CareReceiverAgent.Host.Models
 {
-    public class RemoteControlButton
+    /// <summary>리모콘 한 줄: 명칭·벨코드 1:1·사용 여부.</summary>
+    public class RemoteControlEntry
     {
-        public int Number { get; set; } // 1..15
-        public string Name { get; set; } = string.Empty;
-        public string SendCode { get; set; } = string.Empty; // raw line to send (without trailing \r)
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        /// <summary>수신 벨 코드(정규화 후 소문자 등, 저장은 UI/서버 규칙 따름).</summary>
+        public string BellCode { get; set; } = "";
+        public bool Enabled { get; set; } = true;
     }
 
     public class RemoteControlSettings
     {
-        public List<RemoteControlButton> Buttons { get; set; } = new List<RemoteControlButton>();
+        public List<RemoteControlEntry> Remotes { get; set; } = new List<RemoteControlEntry>();
     }
 }
-

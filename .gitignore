@@ -19,11 +19,48 @@ Thumbs.db
 
 ## Logs
 *.log
+# 실수로 생성된 터미널/덤프 파일
+**/stdout
+**/stderr
 
-## Build artifacts / installers
+## Build artifacts / installers (로컬·CI에서 빌드)
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.msm
+*.msp
+# 배포용 압축(소스만 푸시, 패키지는 릴리스/아티팩트에)
+*.zip
+*.7z
+
 **/installer/*.exe
 **/installer/*.zip
-*.msi
+
+# 임시 전체 복사 빌드 폴더
+.tmp-host-build*/
+tmp-host-build*/
+
+# 일부 프로젝트의 publish 산출물 폴더( bin 밖에 둔 경우 )
+**/_out/
+**/publish_output/
+
+## 비밀번호·로컬 전용 설정 (저장소에는 *.example 만)
+**/upload.ini
+**/update.ini
+**/.env
+!**/.env.example
+!**/.env.*.example
+!**/upload.ini.example
+!**/update.ini.example
+!**/upload.ignore.example
+# 로컬 업로드 제외 목록(필요 시 upload.ignore.example 복사)
+**/upload.ignore
+
+## Visual Studio
+**/.vs/
 
 ## Cursor / tooling
 .cursor/

@@ -54,6 +54,7 @@ namespace CareReceiverAgent.Host.Models
         public int BaudRate { get; set; } = 9600;
         public bool AutoConnect { get; set; } = true;
         public bool SecureEnabled { get; set; }
+        public bool? AllowLegacyBellDecrypt { get; set; }
         public string DeviceSerialNumber { get; set; } = "00000000";
     }
 }

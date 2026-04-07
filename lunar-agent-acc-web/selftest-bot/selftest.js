@@ -266,11 +266,13 @@ async function main() {
   );
   console.log('   ✓ host serial connected');
 
-  console.log(`\n5) 핸드셰이크 검증: Host가 "${deviceSerial}.seed=..." 보내면 봇이 "${deviceSerial}.ok" 응답`);
+  console.log(
+    '\n5) 핸드셰이크 검증: Host가 "<8자리>.seed=..."내면 봇이 동일 접두 "<sn>.ok" 응답 (실제 모듈은 00000000 조회 시 00000000.ok)'
+  );
   await poll(
     async () => {
-      const hasSeed = botRx.some((l) => l.startsWith(`${deviceSerial}.seed=`) || l.startsWith('crcv.seed='));
-      const hasOk = botTx.includes(`${deviceSerial}.ok`) || botTx.includes('ok');
+      const hasSeed = botRx.some((l) => /^\d{8}\.seed=/.test(l) || l.startsWith('crcv.seed='));
+      const hasOk = botTx.some((l) => /^\d{8}\.ok$/i.test(l) || l === 'ok');
       return hasSeed && hasOk ? true : null;
     },
     { timeoutMs: 3000, intervalMs: 100, label: 'handshake (rx seed / tx ok)' }

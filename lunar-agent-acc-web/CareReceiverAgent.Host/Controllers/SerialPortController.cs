@@ -104,7 +104,16 @@ namespace CareReceiverAgent.Host.Controllers
             }
             else
             {
+                var fromUi = entry;
                 entry = existing;
+                // 저장 없이 "연결"만 눌렀을 때 UI의 보안·레거시·Baud 등이 디스크 설정에 묻히지 않도록 병합
+                entry.SecureEnabled = fromUi.SecureEnabled;
+                entry.BaudRate = fromUi.BaudRate;
+                entry.AutoConnect = fromUi.AutoConnect;
+                if (!string.IsNullOrWhiteSpace(fromUi.DeviceSerialNumber))
+                    entry.DeviceSerialNumber = fromUi.DeviceSerialNumber.Trim();
+                if (fromUi.AllowLegacyBellDecrypt.HasValue)
+                    entry.AllowLegacyBellDecrypt = fromUi.AllowLegacyBellDecrypt;
             }
             var connected = _manager.Connect(entry);
             if (connected)
@@ -318,6 +327,7 @@ namespace CareReceiverAgent.Host.Controllers
                     BaudRate = baud,
                     AutoConnect = true,
                     SecureEnabled = false,
+                    AllowLegacyBellDecrypt = true,
                     DeviceSerialNumber = "00000000"
                 });
                 added.Add(name);
