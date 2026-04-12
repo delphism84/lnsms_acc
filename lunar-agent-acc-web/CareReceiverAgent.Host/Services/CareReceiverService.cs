@@ -101,9 +101,9 @@ namespace CareReceiverAgent.Host.Services
                     builder.Services.AddSingleton<NotificationQueueService>();
                     builder.Services.AddSingleton<InboundPacketGateService>();
 
-                    // 백그라운드 서비스
                     builder.Services.AddHostedService<SerialPortBackgroundService>();
-                    builder.Services.AddHostedService<NetworkTransportBackgroundService>();
+                    builder.Services.AddSingleton<NetworkTransportBackgroundService>();
+                    builder.Services.AddHostedService(sp => sp.GetRequiredService<NetworkTransportBackgroundService>());
 
                     // SignalR
                     builder.Services.AddSignalR();

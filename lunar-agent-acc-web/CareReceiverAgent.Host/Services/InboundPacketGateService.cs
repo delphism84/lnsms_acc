@@ -61,6 +61,21 @@ namespace CareReceiverAgent.Host.Services
                     return;
                 }
 
+                // 장애인 진동벨 고정 32hex — 시리얼이 없으면 NormalizeInboundLine 을 거치지 않아 여기서 assist 로 치환
+                var dotIdx = normalized.IndexOf('.');
+                if (dotIdx > 0 && body.Length == 32 && body.All(IsHexLowerOrUpper) &&
+                    SerialPortService.IsVibrationAssistHex32(body))
+                {
+                    var assistHexLogged = body;
+                    var prefix = normalized.Substring(0, dotIdx).Trim();
+                    if (string.IsNullOrEmpty(prefix)) prefix = "00000000";
+                    normalized = prefix + ".assist";
+                    body = "assist";
+                    _logger.LogInformation(
+                        "장애인 진동벨 고정 32hex → assist 매핑 Port={Port} hex32={Hex}",
+                        portName ?? "(null)", assistHexLogged);
+                }
+
                 if (body.Length == 32 && body.All(IsHexLowerOrUpper))
                 {
                     var seedTxt = svc?.SessionSeed != null ? $"0x{svc.SessionSeed.Value:x4}" : "없음";
@@ -159,9 +174,10 @@ namespace CareReceiverAgent.Host.Services
                     return;
                 }
 
-                if (body.StartsWith("nerf=", StringComparison.OrdinalIgnoreCase))
+                if (body.StartsWith("rf=", StringComparison.OrdinalIgnoreCase) ||
+                    body.StartsWith("nerf=", StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogInformation("시리얼 nerf(RF 전달): {Line}", normalized);
+                    _logger.LogInformation("시리얼 RF 전달(rf=/nerf=): {Line}", normalized);
                     return;
                 }
 

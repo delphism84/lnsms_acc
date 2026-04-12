@@ -36,7 +36,14 @@ namespace CareReceiverAgent.Host.Services
             new(System.StringComparer.OrdinalIgnoreCase)
             {
                 "828b94ad008e5dbffd920f6576df1859",
+                "828b94ad008e0bbf04939cb50954b842",
+                // 현장 TCP 로그(192.168.0.146:23) 장애인 고정 프레임
+                "828b94ad008e5dbffd920f6576e4181a",
             };
+
+        /// <summary>장애인 진동벨 고정 v4 페이로드(32hex). TCP·UDP 등 비시리얼 경로에서도 동일 목록으로 인식합니다.</summary>
+        public static bool IsVibrationAssistHex32(string? hex32) =>
+            !string.IsNullOrEmpty(hex32) && VibrationBellAssistHex32.Contains(hex32.Trim());
 
         public event EventHandler<string>? DataReceived;
         public event EventHandler<bool>? ConnectionStatusChanged;
@@ -389,42 +396,30 @@ namespace CareReceiverAgent.Host.Services
             if (data == null || data.Length == 0) return;
             // 라인(\r) 조립 전, 포트에서 읽은 원본 바이트 그대로 (분할 수신 추적용)
             WriteLogFrame("RX-chunk", data);
-            _rxBuffer.AddRange(data);
+            CrDelimitedRxBuffer.Append(_rxBuffer, data);
 
-            // \r로만 구분된 완전한 메시지 처리 (\n은 무시)
-            while (true)
+            // \r로 완성된 줄만 앞에서 추출·소비하고, 남는 것은 미완성 꼬리만
+            CrDelimitedRxBuffer.ExtractAllCompleteLines(_rxBuffer, lineBytes =>
             {
-                int crIndex = _rxBuffer.IndexOf(0x0d);
-                if (crIndex < 0) break;
-
-                var lineBytes = _rxBuffer.Take(crIndex).ToArray();
-                // consume [0..crIndex] (including \r)
-                _rxBuffer.RemoveRange(0, crIndex + 1);
-                // optional \n consume
-                while (_rxBuffer.Count > 0 && _rxBuffer[0] == 0x0a) _rxBuffer.RemoveAt(0);
-
                 string line = Encoding.ASCII.GetString(lineBytes).Trim();
                 if (!string.IsNullOrEmpty(line))
                 {
-                    // RX 로그 기록 (ASCII + HEX)
                     var frameBytes = new byte[lineBytes.Length + 1];
                     Array.Copy(lineBytes, 0, frameBytes, 0, lineBytes.Length);
-                    frameBytes[frameBytes.Length - 1] = 0x0d; // \r
+                    frameBytes[frameBytes.Length - 1] = 0x0d;
                     WriteLogFrame("RX", frameBytes);
 
-                    // 신규 프로토콜: <sn>.ok 수신 시 sn 획득 및 seed pending 처리
                     TryHandleSerialOk(line);
 
                     DataReceived?.Invoke(this, line);
                 }
-            }
-            
-            // 버퍼가 너무 크면 초기화 (무한 증가 방지)
-            if (_rxBuffer.Count > 4096)
+            });
+
+            CrDelimitedRxBuffer.TrimOverflowWithoutCr(_rxBuffer, (dropped, kept) =>
             {
-                System.Diagnostics.Debug.WriteLine($"버퍼 크기 초과, 초기화: {_rxBuffer.Count}");
-                _rxBuffer.Clear();
-            }
+                WriteLog(
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] RX 버퍼 \\r 없이 {CrDelimitedRxBuffer.MaxPendingWithoutCr} 초과 — 선행 {dropped}바이트 삭제, 꼬리 {kept}바이트 유지");
+            });
         }
 
         public void Dispose()

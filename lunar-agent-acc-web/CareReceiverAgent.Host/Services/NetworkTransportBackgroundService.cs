@@ -53,6 +53,11 @@ namespace CareReceiverAgent.Host.Services
                         .Where(l => l.Enabled && l.AutoConnect)
                         .ToList();
 
+                    _logger.LogInformation(
+                        "NetworkTransport 설정: 활성 링크 {Count}개 (파일 기준 전체 {Total}개)",
+                        links.Count,
+                        settings.Links?.Count ?? 0);
+
                     var tasks = new List<Task>();
                     foreach (var link in links)
                     {
@@ -94,10 +99,12 @@ namespace CareReceiverAgent.Host.Services
         private async Task RunTcpAsync(NetworkTransportEntry link, CancellationToken token)
         {
             var label = $"tcp:{link.Id}";
+            var linkName = link.Name ?? "";
             var host = (link.Host ?? "").Trim();
             if (string.IsNullOrEmpty(host) || link.Port <= 0 || link.Port > 65535)
             {
                 _logger.LogWarning("TCP 링크 설정 무효: {Name} {Host}:{Port}", link.Name, host, link.Port);
+                NetworkTransportTcpDebugLog.LogInvalidConfig(label, linkName, host, link.Port);
                 try
                 {
                     await Task.Delay(Timeout.Infinite, token);
@@ -112,40 +119,49 @@ namespace CareReceiverAgent.Host.Services
 
             var buffer = new List<byte>();
             var readBuf = new byte[4096];
+            var attempt = 0;
 
             while (!token.IsCancellationRequested)
             {
+                attempt++;
+                NetworkTransportTcpDebugLog.LogConnectAttempt(label, linkName, host, link.Port, attempt);
                 try
                 {
                     using var client = new TcpClient();
                     await client.ConnectAsync(host, link.Port, token);
+                    attempt = 0;
                     _logger.LogInformation("TCP 연결됨: {Label} {Host}:{Port}", label, host, link.Port);
+                    NetworkTransportTcpDebugLog.LogConnected(label, linkName, client);
                     await using var stream = client.GetStream();
 
                     while (!token.IsCancellationRequested)
                     {
                         var n = await stream.ReadAsync(readBuf.AsMemory(0, readBuf.Length), token);
-                        if (n == 0) break;
-
-                        for (var i = 0; i < n; i++)
-                            buffer.Add(readBuf[i]);
-
-                        while (true)
+                        if (n == 0)
                         {
-                            var cr = buffer.IndexOf((byte)0x0d);
-                            if (cr < 0) break;
-                            var lineBytes = buffer.Take(cr).ToArray();
-                            buffer.RemoveRange(0, cr + 1);
-                            while (buffer.Count > 0 && buffer[0] == 0x0a)
-                                buffer.RemoveAt(0);
+                            NetworkTransportTcpDebugLog.LogRemoteClosed(label, linkName);
+                            break;
+                        }
+
+                        NetworkTransportTcpDebugLog.LogRxChunk(label, linkName, readBuf.AsSpan(0, n));
+
+                        CrDelimitedRxBuffer.Append(buffer, readBuf.AsSpan(0, n));
+
+                        while (CrDelimitedRxBuffer.TryExtractOneLine(buffer, out var lineBytes))
+                        {
+                            NetworkTransportTcpDebugLog.LogRxLineAssembled(label, linkName, lineBytes);
 
                             var line = Encoding.ASCII.GetString(lineBytes).Trim();
                             if (!string.IsNullOrEmpty(line))
                                 await _gate.ProcessInboundAsync(label, line);
                         }
 
-                        if (buffer.Count > 4096)
-                            buffer.Clear();
+                        CrDelimitedRxBuffer.TrimOverflowWithoutCr(buffer, (dropped, kept) =>
+                        {
+                            _logger.LogWarning(
+                                "TCP RX 버퍼 \\r 없이 {Max} 초과 — 선행 {Dropped}바이트 삭제, 꼬리 {Kept}바이트 유지 {Label}",
+                                CrDelimitedRxBuffer.MaxPendingWithoutCr, dropped, kept, label);
+                        });
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -155,8 +171,13 @@ namespace CareReceiverAgent.Host.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "TCP {Label} 오류 — 재연결 대기", label);
+                    NetworkTransportTcpDebugLog.LogException(label, linkName, ex, "connect-or-read");
                 }
 
+                if (token.IsCancellationRequested)
+                    return;
+
+                NetworkTransportTcpDebugLog.LogReconnectWait(label, linkName, 5);
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
@@ -194,6 +215,16 @@ namespace CareReceiverAgent.Host.Services
                     using var udp = new UdpClient();
                     udp.Connect(host, link.Port);
                     _logger.LogInformation("UDP 연결됨: {Label} {Host}:{Port}", label, host, link.Port);
+                    // 상대(서버)가 에이전트의 에페메럴 포트를 알 수 있도록 1회 전송(펀치홀)
+                    try
+                    {
+                        var hello = Encoding.ASCII.GetBytes("hello\r");
+                        await udp.SendAsync(hello, token);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "UDP hello 전송 실패(수신만으로 동작하는 환경이면 무시 가능): {Label}", label);
+                    }
 
                     while (!token.IsCancellationRequested)
                     {

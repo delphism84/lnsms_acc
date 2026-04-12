@@ -13,7 +13,42 @@ namespace CareReceiverAgent.Host.Services
     /// </summary>
     public class JsonDatabaseService
     {
-        private static string DataDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+        /// <summary>
+        /// dotnet run 시 AppContext.BaseDirectory 가 프로젝트 폴더를 가리켜 빈 data 를 읽는 문제 방지 — 항상 이 어셈블리 DLL 경로 기준.
+        /// </summary>
+        private static string? ComputeDataDirFromAssembly()
+        {
+            try
+            {
+                var loc = typeof(JsonDatabaseService).Assembly.Location;
+                if (string.IsNullOrEmpty(loc)) return null;
+                var dir = Path.GetDirectoryName(loc);
+                if (string.IsNullOrEmpty(dir)) return null;
+                return Path.GetFullPath(Path.Combine(dir, "data"));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static readonly string? _dataDirFromAssembly = ComputeDataDirFromAssembly();
+
+        /// <summary>테스트/검수: dotnet run 시 Location 이 비는 경우 대비 — 절대 경로의 data 폴더.</summary>
+        private static string DataDir
+        {
+            get
+            {
+                var env = Environment.GetEnvironmentVariable("LUNAR_AGENT_DATA_DIR");
+                if (!string.IsNullOrWhiteSpace(env))
+                    return Path.GetFullPath(env.Trim());
+
+                if (_dataDirFromAssembly != null)
+                    return _dataDirFromAssembly;
+
+                return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "data"));
+            }
+        }
         private static string PhrasesPath => Path.Combine(DataDir, "phrases.json");
         private static string SerialSettingsPath => Path.Combine(DataDir, "serial_settings.json");
         private static string ActiveSetIdPath => Path.Combine(DataDir, "active_setid.json");
@@ -506,6 +541,8 @@ namespace CareReceiverAgent.Host.Services
                 var host = (e.Host ?? "").Trim();
                 if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
                 var port = e.Port < 0 || e.Port > 65535 ? 0 : e.Port;
+                if (port == 0 && proto == "tcp")
+                    port = 23;
                 o.Links.Add(new NetworkTransportEntry
                 {
                     Id = id,

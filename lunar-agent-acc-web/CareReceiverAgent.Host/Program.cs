@@ -213,9 +213,10 @@ static class Program
                 builder.Services.AddSingleton<NotificationQueueService>();
                 builder.Services.AddSingleton<InboundPacketGateService>();
 
-                // 백그라운드 서비스
+                // 백그라운드 서비스 (NetworkTransport는 컨트롤러에서 RequestReloadSettings 호출을 위해 싱글톤으로도 등록)
                 builder.Services.AddHostedService<SerialPortBackgroundService>();
-                builder.Services.AddHostedService<NetworkTransportBackgroundService>();
+                builder.Services.AddSingleton<NetworkTransportBackgroundService>();
+                builder.Services.AddHostedService(sp => sp.GetRequiredService<NetworkTransportBackgroundService>());
 
                 // SignalR
                 builder.Services.AddSignalR();

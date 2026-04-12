@@ -30,6 +30,13 @@
     </Content>
   </ItemGroup>
 
+  <!-- data/*.json 런타임 설정 (exe 옆 data/) — SDK 기본 Content와 중복되지 않게 Update만 지정 -->
+  <ItemGroup>
+    <Content Update="data\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- repo-root /resource 를 빌드 출력에 배포 -->
   <ItemGroup>
     <!-- resource 폴더 전체를 출력의 resource/로 -->

@@ -43,7 +43,7 @@ function TcpSerialPortSettings() {
     name: '',
     protocol: 'tcp' as 'tcp' | 'udp',
     host: '127.0.0.1',
-    port: '9000',
+    port: '23',
     enabled: true,
     autoConnect: true,
   });
@@ -123,7 +123,7 @@ function TcpSerialPortSettings() {
     };
     const next = [...rows, row];
     setRows(next);
-    setDraft({ name: '', protocol: 'tcp', host: '127.0.0.1', port: '9000', enabled: true, autoConnect: true });
+    setDraft({ name: '', protocol: 'tcp', host: '127.0.0.1', port: '23', enabled: true, autoConnect: true });
     void saveRows(next);
   }, [draft, rows, saveRows]);
 
@@ -212,7 +212,7 @@ function TcpSerialPortSettings() {
               inputMode="numeric"
               value={draft.port}
               onChange={(e) => setDraft((d) => ({ ...d, port: e.target.value }))}
-              placeholder="9000"
+              placeholder="23"
               autoComplete="off"
             />
           </div>
