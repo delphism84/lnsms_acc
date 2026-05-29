@@ -146,6 +146,7 @@ lnsms_acc/                          # git root
 2. `/s/.../device/*` 클라이언트가 `storeRef` query 유지 (기존 동작).
 3. Platform: 매장 생성/삭제 UI (platformApi).
 4. Platform: sync UI (export 다운로드 / import 업로드).
+5. Store setting: 서버 DB 동기화 (upload/download via `/api/sync/*`).
 5. `next.config.ts` rewrites — `/api/platform`, `/api/s` (이미 `/api/:path*`면 충분).
 
 ### Step E — 로컬·배포 (1일)

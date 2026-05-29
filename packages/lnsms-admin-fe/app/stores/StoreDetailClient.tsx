@@ -7,6 +7,7 @@ import { platformPath, storeSiteBase } from '@/src/lib/storeScopePaths';
 import type { Store, Category, Menu, Eqid } from '@/src/lib/api';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
 import { auth } from '@/src/lib/auth';
+import StoreServerSyncPanel from '@/app/components/StoreServerSyncPanel';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowLeft,
@@ -669,6 +670,8 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
           )}
         </div>
       </div>
+
+      <StoreServerSyncPanel agentId={agentId} storeId={storeId} onSynced={loadData} />
 
       {/* EQID 관리 섹션 */}
       <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8 border border-gray-700">

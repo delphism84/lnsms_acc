@@ -30,10 +30,11 @@ dotnet run
 - BE: `MONGODB_URI=mongodb://127.0.0.1:27017/lnsms` (external) 또는 `memory`
 - FE: `NEXT_PUBLIC_API_URL=http://127.0.0.1:40000`
 
-## 동기화 테스트 (로컬 두 DB)
+## 서버 동기화 (매장 setting)
 
-1. 로컬 A에서 `/platform` → Export JSON
-2. 로컬 B(다른 mongo)에서 Import replace
-3. `/s/{agentId}/{storeId}/setting` 새로고침 → 반영 확인
+`/s/{agentId}/{storeId}/setting` → **서버 DB 동기화** 패널
 
-서버 배포 후에는 A=로컬 export, B=서버 `POST .../sync/import` (스크립트/UI 추가 예정).
+1. 운영 서버 URL 입력 (예: `https://your-host` — BE가 프록시되는 주소)
+2. **서버로 업로드** / **서버에서 다운로드**
+
+`.env.local` 기본값: `LNSMS_SYNC_SERVER_URL=https://...`

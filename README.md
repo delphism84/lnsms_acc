@@ -45,9 +45,13 @@ cd packages\agent-host && dotnet run   # + Agent :58000
 | 서버 DB에 반영 | `POST /api/platform/sync/import` (replace) | `/platform` → Import JSON |
 | 매장 편집 (실시간) | `GET/POST /api/s/{agentId}/{storeId}/...` | Store setting — **연결된 Mongo에 즉시 반영** |
 
-**로컬 → 원격 서버** 한 번에 올리려면: 로컬에서 export → 원격 URL로 import (또는 매장 UI에 원격 sync 버튼 추가 — [plan.md](plan.md) Step D).
+**로컬 ↔ 원격** — 매장 setting **서버 DB 동기화** 패널:
 
-**원격 → 로컬** 은 반대로: 원격 export → 로컬 import.
+- **서버로 업로드**: 로컬 BE export → 운영 서버 import (replace)
+- **서버에서 다운로드**: 운영 서버 export → 로컬 BE import (replace)
+
+FE 서버 라우트: `POST /api/sync/upload`, `POST /api/sync/download` (Next가 양쪽 BE를 호출).  
+환경 변수: `LNSMS_SYNC_SERVER_URL` 또는 화면 입력 URL.
 
 `files[]`(업로드 미디어)는 bundle 1차에 메타만 포함 — 바이너리 동기는 별도 단계.
 
