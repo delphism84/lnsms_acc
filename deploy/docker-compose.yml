@@ -1,0 +1,30 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - lnsms_mongo:/data/db
+
+  lnsms-be:
+    build: ../packages/lnsms-be
+    ports:
+      - "40000:40000"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/lnsms
+      PORT: "40000"
+    depends_on:
+      - mongo
+
+  lnsms-admin-fe:
+    build: ../packages/lnsms-admin-fe
+    ports:
+      - "63001:63001"
+    environment:
+      API_PROXY_TARGET: http://lnsms-be:40000
+      NEXT_PUBLIC_API_URL: http://lnsms-be:40000
+    depends_on:
+      - lnsms-be
+
+volumes:
+  lnsms_mongo:
