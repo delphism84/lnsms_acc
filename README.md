@@ -16,14 +16,9 @@ docs/                # 아키텍처, sync bundle, agent 스택
 data/mongo/          # 로컬 external Mongo (git 제외)
 ```
 
-## 서버 운영 (목표)
+## 서버 운영
 
-서버에 **동일 BE + FE**를 배포해 Admin site를 운영합니다.
-
-```bash
-# deploy/docker-compose.yml — mongo + lnsms-be + lnsms-admin-fe
-cd deploy && docker compose up -d
-```
+**[server.md](server.md)** — Mongo, BE/FE, nginx, 최초 설정, 백업, 로컬↔서버 동기화 지침.
 
 - Platform: `https://your-host/platform`
 - 매장 콘솔: `https://your-host/s/{agentId}/{storeId}/setting`
