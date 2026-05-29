@@ -15,6 +15,7 @@ packages/lnsms-be/uploads/
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # OS / IDE
 .DS_Store
