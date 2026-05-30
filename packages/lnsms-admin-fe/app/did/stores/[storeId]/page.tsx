@@ -16,12 +16,12 @@ export default function LegacyDidStorePage() {
     (async () => {
       try {
         const s = await platformApi.getStore(mongoId);
-        const agentId = s.agentId || s.agentid || '';
-        const storeId = s.storeId || s.userid || '';
+        const agentId = s.userid || '';
+        const storeId = s.storeId || '';
         if (!agentId || !storeId) return;
         router.replace(`${storeSiteBase(agentId, storeId)}/device/did?storeRef=${encodeURIComponent(mongoId)}`);
       } catch {
-        router.replace('/did/stores');
+        router.replace('/platform');
       }
     })();
   }, [mongoId, router]);

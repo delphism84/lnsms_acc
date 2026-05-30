@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Eqid, eqidApi } from '@/src/lib/api';
+import type { Eqid } from '@/src/lib/types';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
 import { uploadManager } from '@/src/lib/uploadManager';
 
@@ -50,13 +50,22 @@ export default function DeviceDidModal({ device, agentId = '', storeId = '', onC
   const [options, setOptions] = useState(initialOptions);
   useEffect(() => setOptions(initialOptions), [initialOptions]);
 
+  useEffect(() => {
+    return uploadManager.onPostProcess((task, result) => {
+      if (task.purpose !== 'eqidResource') return;
+      if (task.payload?.eqidId !== device._id) return;
+      if (result && typeof result === 'object' && '_id' in (result as Eqid)) {
+        onUpdated(result as Eqid);
+      }
+    });
+  }, [device._id, onUpdated]);
+
   const handleOptionsSave = async () => {
     try {
       setSaving(true);
       setError(null);
-      const updated = scoped
-        ? await scoped.updateEqid(device._id, { didOptions: options })
-        : await eqidApi.update(device._id, { didOptions: options });
+      if (!scoped) throw new Error('agentId/storeId 필요');
+      const updated = await scoped.updateEqid(device._id, { didOptions: options });
       onUpdated(updated);
     } catch (e: any) {
       setError(e?.message || '저장에 실패했습니다.');
@@ -68,6 +77,8 @@ export default function DeviceDidModal({ device, agentId = '', storeId = '', onC
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setError(null);
+      if (!agentId || !storeId) throw new Error('agentId/storeId가 필요합니다.');
+      setUploading(true);
       // 크롬 계열에서는 파일 핸들을 저장해 새로고침 후에도 자동 재개 가능
       if ('showOpenFilePicker' in window) {
         await uploadManager.pickFilesAndEnqueue({
@@ -110,9 +121,8 @@ export default function DeviceDidModal({ device, agentId = '', storeId = '', onC
   const handleResourceUpdate = async (idx: number, patch: { enabled?: boolean; displayTime?: number; fadeInOut?: boolean }) => {
     try {
       setError(null);
-      const updated = scoped
-        ? await scoped.updateEqidResource(device._id, idx, patch)
-        : await eqidApi.updateResource(device._id, idx, patch);
+      if (!scoped) throw new Error('agentId/storeId 필요');
+      const updated = await scoped.updateEqidResource(device._id, idx, patch);
       onUpdated(updated);
     } catch (e: any) {
       setError(e?.message || '리소스 수정에 실패했습니다.');
@@ -123,9 +133,8 @@ export default function DeviceDidModal({ device, agentId = '', storeId = '', onC
     if (!confirm('정말 삭제하시겠습니까?')) return;
     try {
       setError(null);
-      const updated = scoped
-        ? await scoped.deleteEqidResource(device._id, idx)
-        : await eqidApi.deleteResource(device._id, idx);
+      if (!scoped) throw new Error('agentId/storeId 필요');
+      const updated = await scoped.deleteEqidResource(device._id, idx);
       onUpdated(updated);
     } catch (e: any) {
       setError(e?.message || '리소스 삭제에 실패했습니다.');
@@ -188,7 +197,7 @@ export default function DeviceDidModal({ device, agentId = '', storeId = '', onC
               {(device.resources || []).length === 0 ? (
                 <div className="text-gray-400 text-sm border border-gray-800 rounded-lg p-4">등록된 리소스가 없습니다.</div>
               ) : (
-                device.resources.map((r, idx) => (
+                (device.resources || []).map((r, idx) => (
                   <div key={`${r.filename}-${idx}`} className="border border-gray-800 rounded-lg p-3 bg-gray-950/20">
                     <div className="flex gap-3">
                       <div className="w-40 h-24 shrink-0 rounded-md overflow-hidden bg-gray-800 border border-gray-700 flex items-center justify-center">

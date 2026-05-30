@@ -1,12 +1,5 @@
 @echo off
-setlocal
-set ROOT=%~dp0..\..
-echo Repo: %ROOT%
+rem 레거시 안내 — debug-kill-build-run.bat 사용
+echo Use debug-kill-build-run.bat (또는 bin\Debug\net9.0-windows\debug-kill-build-run.bat)
 echo.
-echo 1) Optional: start stack without Host
-echo    powershell -File "%ROOT%\scripts\dev-agent.ps1"
-echo.
-echo 2) Build and run CareReceiverAgent.Host (starts LocalStack + :58000)
-echo    dotnet run --project "%~dp0CareReceiverAgent.Host.csproj"
-echo.
-pause
+call "%~dp0debug-kill-build-run.bat"

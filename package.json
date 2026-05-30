@@ -1,0 +1,12 @@
+{
+  "name": "lnsms",
+  "private": true,
+  "scripts": {
+    "dev:be": "cd packages/lnsms-be && npm run dev",
+    "dev:fe": "cd packages/lnsms-admin-fe && npm run dev",
+    "seed": "node scripts/seed-greenfield.js",
+    "qa": "node packages/qa-bot/src/index.js",
+    "qa:once": "QA_ONCE=1 node packages/qa-bot/src/index.js",
+    "qa:watch": "QA_AUTO_START_BE=0 node packages/qa-bot/src/index.js"
+  }
+}

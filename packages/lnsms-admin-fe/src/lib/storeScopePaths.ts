@@ -1,17 +1,19 @@
-/** Subpath URL helpers — Platform vs Store site */
+/** Store site URL + API helpers (greenfield: userid + storeId) */
 
-export function storeSiteBase(agentId: string, storeId: string) {
-  return `/s/${encodeURIComponent(agentId)}/${encodeURIComponent(storeId)}`;
+export const LOCAL_USERID = (process.env.NEXT_PUBLIC_LOCAL_USERID || 'necall').trim();
+export const LOCAL_STORE_ID = (process.env.NEXT_PUBLIC_LOCAL_STORE_ID || 'guest').trim();
+export const REMOTE_API_URL = (process.env.NEXT_PUBLIC_REMOTE_API_URL || 'https://admin.necall.com').trim();
+
+export function storeSiteBase(userid: string, storeId: string) {
+  return `/s/${encodeURIComponent(userid)}/${encodeURIComponent(storeId)}`;
 }
 
-export function storeSiteSetting(agentId: string, storeId: string, storeRef?: string) {
-  const base = `${storeSiteBase(agentId, storeId)}/setting`;
-  if (!storeRef) return base;
-  return `${base}?storeRef=${encodeURIComponent(storeRef)}`;
+export function storeSiteSetting(userid: string, storeId: string) {
+  return `${storeSiteBase(userid, storeId)}/setting`;
 }
 
-export function storeApiBase(agentId: string, storeId: string) {
-  return `/api/s/${encodeURIComponent(agentId)}/${encodeURIComponent(storeId)}`;
+export function storeApiBase(userid: string, storeId: string) {
+  return `/api/store/${encodeURIComponent(userid)}/${encodeURIComponent(storeId)}`;
 }
 
 export function platformPath(sub = '') {
@@ -19,10 +21,11 @@ export function platformPath(sub = '') {
   return `/platform${p}`;
 }
 
-/** 로컬 단일 매장 모드: NEXT_PUBLIC_STORE_AGENT_ID + NEXT_PUBLIC_STORE_STORE_ID */
-export function localStoreSettingPath(): string | null {
-  const agentId = (process.env.NEXT_PUBLIC_STORE_AGENT_ID || '').trim();
-  const storeId = (process.env.NEXT_PUBLIC_STORE_STORE_ID || '').trim();
-  if (!agentId || !storeId) return null;
-  return storeSiteSetting(agentId, storeId);
+export function localStoreSettingPath(): string {
+  return storeSiteSetting(LOCAL_USERID, LOCAL_STORE_ID);
+}
+
+/** @deprecated use userid — alias for migration */
+export function storeSiteBaseLegacy(agentId: string, storeId: string) {
+  return storeSiteBase(agentId, storeId);
 }

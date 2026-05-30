@@ -109,12 +109,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-gray-700">
-            <p className="text-xs text-gray-500 text-center">
-              기본 계정: cube / Eldpdj!@34 또는 admin / admin
-            </p>
-          </div>
         </div>
       </div>
     </div>

@@ -64,6 +64,9 @@ public sealed class LocalStackSupervisor : IDisposable
             ? $"mongodb://127.0.0.1:{_cfg.MongoPort}/lnsms"
             : "memory";
 
+        var uploadDir = Path.Combine(repoRoot, "data", "uploads");
+        Directory.CreateDirectory(uploadDir);
+
         StartNode(
             "lnsms-be",
             fileName: FindNodeExe(),
@@ -73,9 +76,11 @@ public sealed class LocalStackSupervisor : IDisposable
             {
                 ["PORT"] = _cfg.LnsmsBePort.ToString(),
                 ["MONGODB_URI"] = mongoUri,
+                ["LOCAL_GUEST_PASSWORD"] = _cfg.LocalGuestPassword,
+                ["UPLOAD_DIR"] = uploadDir,
             });
 
-        var apiBase = _cfg.LnsmsApiBase.TrimEnd('/');
+        var apiBase = _cfg.LnsmsApiBaseLocal.TrimEnd('/');
         StartNpmDev(
             "lnsms-admin-fe",
             workingDirectory: feDir,
@@ -83,14 +88,16 @@ public sealed class LocalStackSupervisor : IDisposable
             {
                 ["NEXT_PUBLIC_API_URL"] = apiBase,
                 ["API_PROXY_TARGET"] = apiBase,
-                ["NEXT_PUBLIC_STORE_AGENT_ID"] = _cfg.QaUserId,
-                ["NEXT_PUBLIC_STORE_STORE_ID"] = _cfg.QaStoreId,
+                ["NEXT_PUBLIC_LOCAL_USERID"] = _cfg.Userid,
+                ["NEXT_PUBLIC_LOCAL_STORE_ID"] = _cfg.StoreId,
+                ["NEXT_PUBLIC_LOCAL_GUEST_PASSWORD"] = _cfg.LocalGuestPassword,
+                ["NEXT_PUBLIC_REMOTE_API_URL"] = _cfg.LnsmsApiBaseRemote.TrimEnd('/'),
             });
 
         await WaitForHttpOkAsync($"{apiBase}/health", TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
-        await WaitForHttpOkAsync(_cfg.LnsmsUiBase.TrimEnd('/'), TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
+        await WaitForHttpOkAsync(_cfg.LnsmsUiBaseLocal.TrimEnd('/'), TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
 
-        Console.WriteLine($"[LocalStack] Ready BE={apiBase} FE={_cfg.LnsmsUiBase}");
+        Console.WriteLine($"[LocalStack] Ready BE={apiBase} FE={_cfg.LnsmsUiBaseLocal} StoreKey={_cfg.Userid}.{_cfg.StoreId}");
     }
 
     public void Stop()

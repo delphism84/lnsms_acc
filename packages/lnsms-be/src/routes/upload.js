@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { Server: TusServer, FileStore, EVENTS } = require('tus-node-server');
+const { broadcastUploadDone } = require('../ws/gateway');
 
 // 업로드 디렉토리 생성 (로컬: /lunar/lnsms/uploads, Docker: /app/uploads)
 const uploadDir = process.env.UPLOAD_DIR || (process.env.NODE_ENV === 'production' ? '/app/uploads' : '/lunar/lnsms/uploads');
@@ -111,6 +112,8 @@ tusServer.on(EVENTS.EVENT_FILE_CREATED, (event) => {
     const rawMeta = decodeUploadMetadata(file.upload_metadata);
     const filename = safeFilename(rawMeta.filename || rawMeta.name || rawMeta.originalname);
     const mimetype = rawMeta.mimetype || rawMeta.filetype || rawMeta.type || '';
+    const userid = String(rawMeta.userid || rawMeta.agentId || rawMeta.agentid || '').trim();
+    const storeId = String(rawMeta.storeId || '').trim();
     const metaPath = path.join(tusMetaDir, `${file.id}.json`);
     fs.writeFileSync(metaPath, JSON.stringify({
       id: file.id,
@@ -118,6 +121,8 @@ tusServer.on(EVENTS.EVENT_FILE_CREATED, (event) => {
       filename,
       mimetype,
       fileType: computeFileTypeFromMime(mimetype),
+      userid: userid || null,
+      storeId: storeId || null,
       createdAt: new Date().toISOString(),
       status: 'created',
     }, null, 2));
@@ -158,14 +163,47 @@ tusServer.on(EVENTS.EVENT_UPLOAD_COMPLETE, (event) => {
       status: 'completed',
     };
     fs.writeFileSync(metaPath, JSON.stringify(updated, null, 2));
+
+    const userid = String(meta.userid || updated.userid || '').trim();
+    const storeId = String(meta.storeId || updated.storeId || '').trim();
+    if (userid && storeId) {
+      const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:40000';
+      broadcastUploadDone({
+        userid,
+        storeId,
+        payload: {
+          id: file.id,
+          url: `${baseUrl}/uploads/${finalFilename}`,
+          filename: finalFilename,
+          size: updated.size,
+          type: updated.fileType || 'video',
+          originalName: meta.filename,
+          mimetype: meta.mimetype,
+        },
+      });
+    }
   } catch (e) {
     // ignore
   }
 });
 
+function attachTusHandler(req, res) {
+  const origSetHeader = res.setHeader.bind(res);
+  res.setHeader = (name, value) => {
+    if (String(name).toLowerCase() === 'location' && typeof value === 'string') {
+      if (value.startsWith('//')) {
+        const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+        value = `${proto}:${value}`;
+      }
+    }
+    return origSetHeader(name, value);
+  };
+  tusServer.handle(req, res);
+}
+
 // tus 핸들러는 Router에서 직접 처리(Express)
-router.all('/tus', (req, res) => tusServer.handle(req, res));
-router.all('/tus/:id', (req, res) => tusServer.handle(req, res));
+router.all('/tus', (req, res) => attachTusHandler(req, res));
+router.all('/tus/:id', (req, res) => attachTusHandler(req, res));
 
 // 업로드 완료 결과 조회
 router.get('/tus/:id/result', (req, res) => {

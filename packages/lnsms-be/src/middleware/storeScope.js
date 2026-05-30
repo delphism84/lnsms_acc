@@ -2,26 +2,20 @@ const Store = require('../models/Store');
 
 async function storeScope(req, res, next) {
   try {
-    const agentId = String(req.params.agentId || '').trim();
+    const userid = String(req.params.userid || '').trim();
     const storeId = String(req.params.storeId || '').trim();
-    if (!agentId || !storeId) {
-      return res.status(400).json({ error: 'agentId and storeId are required' });
+    if (!userid || !storeId) {
+      return res.status(400).json({ error: 'userid and storeId are required' });
     }
 
-    const store = await Store.findOne({
-      $or: [
-        { agentId, storeId },
-        { agentid: agentId, userid: storeId },
-      ],
-    });
-
+    const store = await Store.findOne({ userid, storeId });
     if (!store) {
-      return res.status(404).json({ error: 'Store not found for this agent/store scope' });
+      return res.status(404).json({ error: 'Store not found for this userid/storeId scope' });
     }
 
     req.storeScope = {
-      agentId: store.agentId || store.agentid,
-      storeId: store.storeId || store.userid,
+      userid,
+      storeId,
       storeRef: store._id,
       store,
     };

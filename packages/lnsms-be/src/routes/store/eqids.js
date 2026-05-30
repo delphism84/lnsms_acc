@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Eqid = require('../../models/Eqid');
 const Store = require('../../models/Store');
+const { emitChanged } = require('../../ws/gateway');
 
 function storeRefId(req) {
   return req.storeScope.storeRef;
@@ -66,6 +67,7 @@ router.post('/:id/resources', async (req, res, next) => {
     };
     eqid.resources.push(resourceData);
     await eqid.save();
+    emitChanged(req, 'devices', 'update', String(eqid._id));
     res.json(eqid);
   } catch (err) {
     next(err);
@@ -85,6 +87,7 @@ router.put('/:id/resources/:resourceIndex', async (req, res, next) => {
     if (displayTime !== undefined) eqid.resources[resourceIndex].displayTime = displayTime;
     if (fadeInOut !== undefined) eqid.resources[resourceIndex].fadeInOut = fadeInOut;
     await eqid.save();
+    emitChanged(req, 'devices', 'update', String(eqid._id));
     res.json(eqid);
   } catch (err) {
     next(err);
@@ -100,6 +103,7 @@ router.delete('/:id/resources/:resourceIndex', async (req, res, next) => {
       eqid.resources.splice(resourceIndex, 1);
       await eqid.save();
     }
+    emitChanged(req, 'devices', 'update', String(eqid._id));
     res.json(eqid);
   } catch (err) {
     next(err);
@@ -129,6 +133,7 @@ router.post('/', async (req, res, next) => {
       resources: [],
     });
     await newEqid.save();
+    emitChanged(req, 'devices', 'create', String(newEqid._id));
     res.status(201).json(newEqid);
   } catch (error) {
     if (error.code === 11000) return res.status(400).json({ error: '이미 존재하는 EQID입니다.' });
@@ -150,6 +155,7 @@ router.put('/:id', async (req, res, next) => {
     if (category !== undefined) updateData.category = category;
 
     const eqid = await Eqid.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    emitChanged(req, 'devices', 'update', String(eqid._id));
     res.json(eqid);
   } catch (err) {
     next(err);
@@ -161,6 +167,7 @@ router.delete('/:id', async (req, res, next) => {
     const existing = await findOwnedEqid(req, req.params.id);
     if (!existing) return res.status(404).json({ error: 'EQID not found' });
     await Eqid.findByIdAndDelete(req.params.id);
+    emitChanged(req, 'devices', 'delete', String(req.params.id));
     res.json({ message: 'EQID deleted successfully' });
   } catch (err) {
     next(err);

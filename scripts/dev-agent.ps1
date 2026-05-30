@@ -1,14 +1,15 @@
-# C# Host 없이 로컬 스택만 기동 (mongod + lnsms-be + admin-fe)
+# C# Host 없이 로컬 스택만 기동 (mongod + lnsms-be + admin-fe) — greenfield necall.guest
 param(
     [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent),
-    [string]$AgentId = "a1",
-    [string]$StoreId = "s1",
+    [string]$Userid = "necall",
+    [string]$StoreId = "guest",
     [switch]$SkipMongo,
     [switch]$NoKill
 )
 
 $ErrorActionPreference = "Stop"
 $mongoData = Join-Path $RepoRoot "data\mongo"
+$uploadDir = Join-Path $RepoRoot "data\uploads"
 $be = Join-Path $RepoRoot "packages\lnsms-be"
 $fe = Join-Path $RepoRoot "packages\lnsms-admin-fe"
 
@@ -29,6 +30,8 @@ if (-not $NoKill) {
     Start-Sleep -Seconds 1
 }
 
+New-Item -ItemType Directory -Force -Path $uploadDir | Out-Null
+
 if (-not $SkipMongo) {
     New-Item -ItemType Directory -Force -Path $mongoData | Out-Null
     $mongod = (Get-Command mongod -ErrorAction SilentlyContinue)?.Source
@@ -43,6 +46,8 @@ if (-not $SkipMongo) {
 
 $env:PORT = "40000"
 $env:MONGODB_URI = $mongoUri
+$env:LOCAL_GUEST_PASSWORD = "guest"
+$env:UPLOAD_DIR = $uploadDir
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$be'; npm run dev"
 
 Start-Sleep -Seconds 2
@@ -51,15 +56,17 @@ $feCmd = @(
     "cd '$fe'",
     "`$env:NEXT_PUBLIC_API_URL='http://127.0.0.1:40000'",
     "`$env:API_PROXY_TARGET='http://127.0.0.1:40000'",
-    "`$env:NEXT_PUBLIC_STORE_AGENT_ID='$AgentId'",
-    "`$env:NEXT_PUBLIC_STORE_STORE_ID='$StoreId'",
+    "`$env:NEXT_PUBLIC_LOCAL_USERID='$Userid'",
+    "`$env:NEXT_PUBLIC_LOCAL_STORE_ID='$StoreId'",
+    "`$env:NEXT_PUBLIC_LOCAL_GUEST_PASSWORD='guest'",
+    "`$env:NEXT_PUBLIC_REMOTE_API_URL='https://admin.necall.com'",
     "npm run dev"
 ) -join "; "
 
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $feCmd
 
 Write-Host ""
-Write-Host "BE   http://127.0.0.1:40000/health"
-Write-Host "FE   http://127.0.0.1:63001"
-Write-Host "Store http://127.0.0.1:63001/s/$AgentId/$StoreId/setting"
-Write-Host "Agent Host (58000)는 packages\agent-host 를 F5로 실행하세요."
+Write-Host "BE    http://127.0.0.1:40000/health"
+Write-Host "FE    http://127.0.0.1:63001"
+Write-Host "Store http://127.0.0.1:63001/s/$Userid/$StoreId/setting"
+Write-Host "Agent Host (58000): packages\agent-host\bin\Debug\net9.0-windows\debug-kill-build-run.bat"

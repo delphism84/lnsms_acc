@@ -1,0 +1,15 @@
+module.exports = {
+  beUrl: (process.env.QA_BE_URL || 'http://127.0.0.1:40000').replace(/\/$/, ''),
+  feUrl: (process.env.QA_FE_URL || 'http://127.0.0.1:63001').replace(/\/$/, ''),
+  intervalMs: Number(process.env.QA_INTERVAL_MS || 30000),
+  healthIntervalMs: Number(process.env.QA_HEALTH_INTERVAL_MS || 10000),
+  once: process.env.QA_ONCE === '1' || process.env.QA_ONCE === 'true',
+  autoStartBe: process.env.QA_AUTO_START_BE === '1' || process.env.QA_AUTO_START_BE === 'true',
+  beStartCmd: process.env.QA_BE_START_CMD || 'npm run dev',
+  beCwd: process.env.QA_BE_CWD || require('path').join(__dirname, '../../lnsms-be'),
+  guestUserid: process.env.QA_GUEST_USERID || 'necall',
+  guestStoreId: process.env.QA_GUEST_STORE_ID || 'guest',
+  guestPassword: process.env.QA_GUEST_PASSWORD || 'guest',
+  adminUser: process.env.QA_ADMIN_USER || 'admin',
+  adminPassword: process.env.QA_ADMIN_PASSWORD || 'admin',
+};

@@ -1,3 +1,5 @@
+import { auth } from './auth';
+
 const API_URL = (() => {
   const explicit = (process.env.NEXT_PUBLIC_API_URL || '').trim();
   if (explicit) return explicit.replace(/\/$/, '');
@@ -9,10 +11,19 @@ const API_URL = (() => {
   return '';
 })();
 
+function authHeaders(): Record<string, string> {
+  const token = auth.getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function platformFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}/api/platform${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(init?.headers || {}),
+    },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -23,37 +34,30 @@ async function platformFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type PlatformStore = {
   _id: string;
-  agentId?: string;
-  agentid?: string;
-  storeId?: string;
-  userid?: string;
-  name?: string;
-};
-
-export type SyncBundle = {
-  version: number;
-  agentId: string;
+  userid: string;
   storeId: string;
-  storeRef: string;
-  exportedAt: string;
-  store?: unknown;
-  collections: Record<string, unknown[]>;
-  files: unknown[];
+  name?: string;
+  description?: string;
 };
 
 export const platformApi = {
-  listAgents: () => platformFetch<Array<{ agentId: string; agentid?: string }>>('/agents'),
   listStores: () => platformFetch<PlatformStore[]>('/stores'),
-  listStoresByAgent: (agentId: string) => platformFetch<PlatformStore[]>(`/stores/by-agent/${encodeURIComponent(agentId)}`),
-  createStore: (body: { agentId: string; storeId: string; name: string; description?: string } & Record<string, unknown>) =>
-    platformFetch<PlatformStore>('/stores', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...body,
-        agentid: body.agentId,
-        userid: body.storeId,
-      }),
-    }),
+
+  /** unique userid list (구 agent 목록) */
+  listAgents: async (): Promise<Array<{ agentId: string; userid: string }>> => {
+    const stores = await platformFetch<PlatformStore[]>('/stores');
+    const userids = [...new Set(stores.map((s) => s.userid).filter(Boolean))];
+    return userids.sort().map((userid) => ({ agentId: userid, userid }));
+  },
+
+  listStoresByUser: (userid: string) =>
+    platformFetch<PlatformStore[]>(`/stores/by-user/${encodeURIComponent(userid)}`),
+
+  /** @deprecated use listStoresByUser */
+  listStoresByAgent: (userid: string) =>
+    platformFetch<PlatformStore[]>(`/stores/by-user/${encodeURIComponent(userid)}`),
+  createStore: (body: { userid: string; storeId: string; name: string; password?: string } & Record<string, unknown>) =>
+    platformFetch<PlatformStore>('/stores', { method: 'POST', body: JSON.stringify(body) }),
   getStore: (mongoId: string) => platformFetch<PlatformStore>(`/stores/${encodeURIComponent(mongoId)}`),
   updateStore: (mongoId: string, body: Partial<PlatformStore> & Record<string, unknown>) =>
     platformFetch<PlatformStore>(`/stores/${encodeURIComponent(mongoId)}`, {
@@ -62,14 +66,4 @@ export const platformApi = {
     }),
   deleteStore: (mongoId: string) =>
     platformFetch<{ message: string }>(`/stores/${encodeURIComponent(mongoId)}`, { method: 'DELETE' }),
-  exportBundle: (agentId: string, storeId: string) =>
-    platformFetch<SyncBundle>('/sync/export', {
-      method: 'POST',
-      body: JSON.stringify({ agentId, storeId }),
-    }),
-  importBundle: (agentId: string, storeId: string, bundle: SyncBundle, mode: 'replace' | 'merge' = 'replace') =>
-    platformFetch<{ success: boolean }>('/sync/import', {
-      method: 'POST',
-      body: JSON.stringify({ agentId, storeId, bundle, mode }),
-    }),
 };

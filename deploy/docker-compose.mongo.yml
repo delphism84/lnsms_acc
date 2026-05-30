@@ -1,0 +1,10 @@
+# MongoDB only — bind mount under repo (gitignored: data/mongo/)
+services:
+  mongo:
+    image: mongo:7
+    container_name: lnsms-acc-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - /var/lnsms/data/mongo:/data/db

@@ -16,8 +16,8 @@ export function resolveLegacyStoreQuery(q: {
   return { agentId, storeId, storeRef };
 }
 
-export function legacyToStoreSetting(agentId: string, storeId: string, storeRef?: string) {
-  return storeSiteSetting(agentId, storeId, storeRef || undefined);
+export function legacyToStoreSetting(agentId: string, storeId: string, _storeRef?: string) {
+  return storeSiteSetting(agentId, storeId);
 }
 
 export function legacyToStoreDevice(agentId: string, storeId: string, segment: LegacyDeviceSegment, storeRef?: string) {
