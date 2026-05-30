@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { agentApi, authApi, Store } from '@/src/lib/api';
+import type { Store } from '@/src/lib/types';
 import { platformApi } from '@/src/lib/platformApi';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -153,79 +153,21 @@ export default function Sidebar() {
 
   const openAgentEditor = async (agentId: string) => {
     setAgentEditingId(agentId);
+    setAgentForm({ ...defaultAgentForm, name: agentId, description: `업체 ${agentId}` });
     setShowAgentModal(true);
     setAgentModalError(null);
-    setAgentModalLoading(true);
-    try {
-      const a: any = await agentApi.get(agentId);
-      setAgentForm({
-        ...defaultAgentForm,
-        name: a.name || '',
-        description: a.description || '',
-        manager: {
-          name: a.manager?.name || '',
-          phone: a.manager?.phone || '',
-          email: a.manager?.email || '',
-        },
-        contact: {
-          ...defaultAgentForm.contact,
-          ...(a.contact || {}),
-        },
-        location: {
-          ...defaultAgentForm.location,
-          ...(a.location || {}),
-          lat: a.location?.lat ?? null,
-          lng: a.location?.lng ?? null,
-        },
-        business: { ...defaultAgentForm.business, ...(a.business || {}) },
-        operations: { ...defaultAgentForm.operations, ...(a.operations || {}) },
-        services: { ...defaultAgentForm.services, ...(a.services || {}) },
-        billing: { ...defaultAgentForm.billing, ...(a.billing || {}) },
-        branding: { ...defaultAgentForm.branding, ...(a.branding || {}) },
-        integration: { ...defaultAgentForm.integration, ...(a.integration || {}) },
-        status: {
-          ...defaultAgentForm.status,
-          ...(a.status || {}),
-        },
-        tags: Array.isArray(a.tags) ? a.tags : [],
-        memoInternal: a.memoInternal || '',
-      });
-    } catch (e: any) {
-      setAgentForm(defaultAgentForm);
-      setAgentModalError(e?.message || '에이전트 정보를 불러올 수 없습니다.');
-    } finally {
-      setAgentModalLoading(false);
-    }
+    setAgentModalLoading(false);
   };
 
   const handleAgentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agentEditingId) return;
-    setAgentModalSaving(true);
-    setAgentModalError(null);
-    try {
-      await agentApi.update(agentEditingId, agentForm as any);
-      setShowAgentModal(false);
-    } catch (e: any) {
-      setAgentModalError(e?.message || '저장에 실패했습니다.');
-    } finally {
-      setAgentModalSaving(false);
-    }
+    setShowAgentModal(false);
   };
 
   const handleAgentPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agentEditingId) return;
-    setAgentModalError(null);
-    try {
-      await authApi.updatePassword(agentEditingId, agentPw);
-      setShowAgentPasswordModal(false);
-      setAgentPw('');
-      // eslint-disable-next-line no-alert
-      alert('비밀번호가 변경되었습니다.');
-    } catch (e: any) {
-      setAgentModalError(e?.message || '비밀번호 변경에 실패했습니다.');
-    }
+    setShowAgentPasswordModal(false);
+    setAgentPw('');
   };
 
   const fetchAgents = async () => {
@@ -248,19 +190,18 @@ export default function Sidebar() {
 
   const handleDeleteAgent = async (agentId: string) => {
     const ok = window.confirm(
-      `에이전트 "${agentId}" 를 삭제할까요?\n\n주의: 해당 에이전트의 매장/카테고리/메뉴/장치(EQID)까지 모두 삭제됩니다.`
+      `업체 "${agentId}" 의 모든 매장을 삭제할까요?`
     );
     if (!ok) return;
     try {
       setError(null);
-      await agentApi.delete(agentId);
-      // 캐시/트리 상태 초기화 후 재조회
+      const stores = await platformApi.listStoresByUser(agentId);
+      for (const s of stores) await platformApi.deleteStore(s._id);
       setStoresByAgent({});
       setDevicesByStore({});
-      setOpen({ agents: true });
       await fetchAgents();
-    } catch (e: any) {
-      setError(e?.message || '에이전트 삭제에 실패했습니다.');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '삭제에 실패했습니다.');
     }
   };
 
@@ -585,7 +526,7 @@ export default function Sidebar() {
                                   <span className="text-gray-600 font-normal">({stores.length})</span>
                                 </span>
                               }
-                              right={<Link href={`/stores/${agentId}`} className="text-blue-300 hover:text-blue-200" title="에이전트별 매장 CRUD">관리</Link>}
+                              right={<Link href="/platform" className="text-blue-300 hover:text-blue-200" title="Platform 매장 관리">관리</Link>}
                             />
 
                             {/* 매장 하위 인덴트 */}
@@ -601,7 +542,7 @@ export default function Sidebar() {
                                     const sid = s.storeId || s.userid;
                                     const storeOpenKey = `store:${s._id}`;
                                     const storeOpen = !!open[storeOpenKey];
-                                    const storeSettingHref = storeSiteSetting(agentId, String(sid), s._id);
+                                    const storeSettingHref = storeSiteSetting(agentId, String(sid));
                                     const storeSiteBasePath = storeSiteBase(agentId, String(sid));
                                     const qs = `agentid=${encodeURIComponent(agentId)}&userid=${encodeURIComponent(String(sid))}&storeRef=${encodeURIComponent(s._id)}`;
                                     return (

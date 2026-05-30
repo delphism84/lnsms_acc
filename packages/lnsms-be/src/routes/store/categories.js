@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Category = require('../../models/Category');
 const Menu = require('../../models/Menu');
+const { emitChanged } = require('../../ws/gateway');
 
 function storeRefId(req) {
   return req.storeScope.storeRef;
@@ -39,6 +40,7 @@ router.post('/', async (req, res, next) => {
     if (!name) return res.status(400).json({ error: 'name is required' });
     const category = new Category({ ...req.body, storeId: storeRefId(req) });
     await category.save();
+    emitChanged(req, 'categories', 'create', String(category._id));
     res.status(201).json(category);
   } catch (err) {
     next(err);
@@ -54,6 +56,7 @@ router.put('/:id', async (req, res, next) => {
       { ...req.body, storeId: storeRefId(req) },
       { new: true, runValidators: true }
     );
+    emitChanged(req, 'categories', 'update', String(category._id));
     res.json(category);
   } catch (err) {
     next(err);
@@ -66,6 +69,7 @@ router.delete('/:id', async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Category not found' });
     await Menu.deleteMany({ categoryId: req.params.id, storeId: storeRefId(req) });
     await Category.findByIdAndDelete(req.params.id);
+    emitChanged(req, 'categories', 'delete', String(req.params.id));
     res.json({ message: 'Category and associated menus deleted successfully' });
   } catch (err) {
     next(err);

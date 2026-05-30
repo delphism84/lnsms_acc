@@ -16,7 +16,7 @@ export default function StoreDeviceBackLink({ label = '← Store 관리' }: { la
   const storeRef = first(sp.get('storeRef')) || first(sp.get('storeid'));
 
   const href =
-    agentId && storeId ? storeSiteSetting(agentId, storeId, storeRef || undefined) : '/platform';
+    agentId && storeId ? storeSiteSetting(agentId, storeId) : '/platform';
 
   return (
     <Link href={href} className="text-blue-300 hover:text-blue-200 text-sm">

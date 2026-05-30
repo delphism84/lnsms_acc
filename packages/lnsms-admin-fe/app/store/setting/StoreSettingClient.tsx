@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import StoreDetailClient from '@/app/stores/StoreDetailClient';
+import StoreDetailClient from '@/app/components/store/StoreDetailClient';
 
 function first(v: string | null) {
   return v || '';

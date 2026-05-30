@@ -1,8 +1,10 @@
 import { storeApiBase } from './storeScopePaths';
-import type { Category, Eqid, EqidResource, Menu, MenuResource, Store } from './api';
+import { auth } from './auth';
+import { hostAuth } from './hostAuth';
+import type { Category, Eqid, EqidResource, Menu, MenuResource, Store } from './types';
 
 export type StoreContext = {
-  agentId: string;
+  userid: string;
   storeId: string;
   storeRef: string;
   name?: string;
@@ -10,24 +12,44 @@ export type StoreContext = {
   store: Store;
 };
 
-function base(agentId: string, storeId: string) {
-  const root = storeApiBase(agentId, storeId);
+function authHeaders(): Record<string, string> {
+  const host = hostAuth.getAccessToken();
+  if (host) return { Authorization: `Bearer ${host}` };
+  const token = auth.getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function base(userid: string, storeId: string) {
+  const root = storeApiBase(userid, storeId);
+
   return {
     root,
     async json<T>(path: string, init?: RequestInit): Promise<T> {
       const res = await fetch(`${root}${path}`, {
         ...init,
-        headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders(),
+          ...(init?.headers || {}),
+        },
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string; message?: string }).error || (err as { message?: string }).message || res.statusText);
+        throw new Error(
+          (err as { error?: string; message?: string }).error ||
+            (err as { message?: string }).message ||
+            res.statusText
+        );
       }
       if (res.status === 204) return undefined as T;
       return res.json() as Promise<T>;
     },
     async upload<T>(path: string, formData: FormData): Promise<T> {
-      const res = await fetch(`${root}${path}`, { method: 'POST', body: formData });
+      const res = await fetch(`${root}${path}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: formData,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || res.statusText);
@@ -37,8 +59,8 @@ function base(agentId: string, storeId: string) {
   };
 }
 
-export function createStoreApi(agentId: string, storeId: string) {
-  const api = base(agentId, storeId);
+export function createStoreApi(userid: string, storeId: string) {
+  const api = base(userid, storeId);
 
   return {
     getContext: () => api.json<StoreContext>('/context'),
@@ -48,10 +70,17 @@ export function createStoreApi(agentId: string, storeId: string) {
     },
     updateStore: (body: Partial<Store>) =>
       api.json<Store>('/context', { method: 'PUT', body: JSON.stringify(body) }),
-    updatePassword: (pw: string) =>
-      api.json<{ message: string }>('/context/password', {
+    updatePassword: (password: string) =>
+      fetch(`/api/host/${encodeURIComponent(userid)}/${encodeURIComponent(storeId)}/password`, {
         method: 'PUT',
-        body: JSON.stringify({ pw, userpw: pw }),
+        headers: { 'Content-Type': 'application/json', ...hostAuth.authHeaders() },
+        body: JSON.stringify({ password }),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err as { message?: string }).message || '비밀번호 변경 실패');
+        }
+        return res.json() as Promise<{ message: string }>;
       }),
 
     listCategories: () => api.json<Category[]>('/categories'),
@@ -88,6 +117,11 @@ export function createStoreApi(agentId: string, storeId: string) {
     deleteEqidResource: (id: string, resourceIndex: number) =>
       api.json<Eqid>(`/eqids/${id}/resources/${resourceIndex}`, { method: 'DELETE' }),
   };
+}
+
+/** @deprecated alias — agentId param is userid */
+export function createStoreApiLegacy(agentId: string, storeId: string) {
+  return createStoreApi(agentId, storeId);
 }
 
 export type StoreApiScoped = ReturnType<typeof createStoreApi>;

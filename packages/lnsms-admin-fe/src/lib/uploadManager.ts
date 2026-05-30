@@ -1,7 +1,8 @@
 import * as tus from 'tus-js-client';
 import { openDB } from 'idb';
-import { eqidApi, menuApi } from '@/src/lib/api';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
+import { hostAuth } from '@/src/lib/hostAuth';
+import { auth } from '@/src/lib/auth';
 
 export type UploadPurpose = 'eqidResource' | 'menuResource';
 
@@ -44,6 +45,7 @@ export type UploadTask = {
 };
 
 type Subscriber = (tasks: UploadTask[]) => void;
+type PostProcessListener = (task: UploadTask, result: unknown) => void;
 
 const DB_NAME = 'lnsms_admin_uploads';
 const DB_VERSION = 1;
@@ -83,9 +85,17 @@ function safeError(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-function endpointBase() {
-  // 동일 오리진(/api...)을 기본으로 사용. (nginx가 /api 를 백엔드로 프록시)
-  return '/api/upload/tus';
+function authHeaders(): Record<string, string> {
+  const host = hostAuth.getAccessToken();
+  if (host) return { Authorization: `Bearer ${host}` };
+  const token = auth.getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function endpointBase(userid?: string, storeId?: string) {
+  const uid = userid || 'necall';
+  const sid = storeId || 'guest';
+  return `/api/store/${encodeURIComponent(uid)}/${encodeURIComponent(sid)}/upload/tus`;
 }
 
 function getTusIdFromUrl(url?: string) {
@@ -162,6 +172,7 @@ const urlStorage: tus.UrlStorage = {
 export class UploadManager {
   private tasks: UploadTask[] = [];
   private subs = new Set<Subscriber>();
+  private postProcessSubs = new Set<PostProcessListener>();
   private running = new Map<string, tus.Upload>();
   private initialized = false;
 
@@ -171,6 +182,17 @@ export class UploadManager {
     return () => {
       this.subs.delete(fn);
     };
+  }
+
+  onPostProcess(fn: PostProcessListener) {
+    this.postProcessSubs.add(fn);
+    return () => {
+      this.postProcessSubs.delete(fn);
+    };
+  }
+
+  private emitPostProcess(task: UploadTask, result: unknown) {
+    for (const fn of this.postProcessSubs) fn(task, result);
   }
 
   getTasks() {
@@ -358,13 +380,19 @@ export class UploadManager {
     let lastBytes = 0;
     let lastTs = now();
 
+    const { agentId, storeId } = t.payload || {};
+    const uid = agentId ? String(agentId) : 'necall';
+    const sid = storeId ? String(storeId) : 'guest';
     const upload = new tus.Upload(file, {
-      endpoint: endpointBase(),
+      endpoint: endpointBase(uid, sid),
       chunkSize: 8 * 1024 * 1024, // 8MB
       retryDelays: [0, 1000, 3000, 5000, 10000],
+      headers: authHeaders(),
       metadata: {
         filename: file.name,
         mimetype: file.type || 'application/octet-stream',
+        userid: uid,
+        storeId: sid,
       },
       urlStorage,
       onError: async (error) => {
@@ -410,13 +438,16 @@ export class UploadManager {
 
         try {
           if (!tusUploadId) throw new Error('업로드 ID를 확인할 수 없습니다.');
-          const res = await fetch(`/api/upload/tus/${encodeURIComponent(tusUploadId)}/result`);
+          const res = await fetch(`${endpointBase(uid, sid)}/${encodeURIComponent(tusUploadId)}/result`, {
+            headers: authHeaders(),
+          });
           if (!res.ok) {
             const msg = await res.text();
             throw new Error(msg || '업로드 결과 조회 실패');
           }
           const uploaded = await res.json();
-          await this.postProcess(next1, uploaded);
+          const result = await this.postProcess(next1, uploaded);
+          if (result !== undefined) this.emitPostProcess(next1, result);
         } catch (e) {
           const cur2 = this.tasks.find((x) => x.id === id);
           if (!cur2) return;
@@ -437,10 +468,15 @@ export class UploadManager {
     upload.start();
   }
 
-  private async postProcess(task: UploadTask, uploaded: { type: 'image' | 'video'; url: string; filename: string; size: number }) {
+  private async postProcess(
+    task: UploadTask,
+    uploaded: { type: 'image' | 'video'; url: string; filename: string; size: number }
+  ): Promise<unknown> {
     const { agentId, storeId } = task.payload || {};
     const scoped =
       agentId && storeId ? createStoreApi(String(agentId), String(storeId)) : null;
+
+    if (!scoped) throw new Error('agentId/storeId 누락');
 
     if (task.purpose === 'eqidResource') {
       const { eqidId, order, displayTime } = task.payload || {};
@@ -455,12 +491,7 @@ export class UploadManager {
         displayTime: typeof displayTime === 'number' ? displayTime : 5000,
         fadeInOut: false,
       };
-      if (scoped) {
-        await scoped.addEqidResource(eqidId, resource);
-      } else {
-        await eqidApi.addResource(eqidId, resource);
-      }
-      return;
+      return scoped.addEqidResource(eqidId, resource);
     }
     if (task.purpose === 'menuResource') {
       const { menuId, order } = task.payload || {};
@@ -472,12 +503,7 @@ export class UploadManager {
         size: uploaded.size,
         order: typeof order === 'number' ? order : 0,
       };
-      if (scoped) {
-        await scoped.addMenuResource(menuId, resource);
-      } else {
-        await menuApi.addResource(menuId, resource);
-      }
-      return;
+      return scoped.addMenuResource(menuId, resource);
     }
     throw new Error('unknown purpose');
   }

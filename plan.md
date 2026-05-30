@@ -1,291 +1,380 @@
-# LNSMS monorepo + 서브패스 구현 계획
+# LNSMS 구현 계획 (Final)
 
-> 새 Cursor 워크스페이스용 단일 계획서.  
-> 이 폴더(`lnsms-acc-scaffold`)를 `lnsms_acc` monorepo로 옮긴 뒤, 이 문서를 **리포 루트 `plan.md`** 로 두고 작업한다.
-
----
-
-## 0. 목표 (한 줄)
-
-**서버·로컬에서 동일한 BE/FE**를 쓰고, **DB만 export/import로 동기화**한다.  
-관리(Platform)는 전체 매장, **Store Site**는 **한 매장**만 (`/s/{agentId}/{storeId}`).  
-매장 UI/BE 수정이 잦으므로 Platform과 **URL·코드 경로를 분리**한다.
+> Greenfield · 레거시·호환 없음  
+> 실시간: [lunarmsg.md](lunarmsg.md) · sets: [docs/setid.md](docs/setid.md)
 
 ---
 
-## 1. 권장 리포 구조 (monorepo)
+## 0. 한 줄
 
-대상 GitHub: [delphism84/lnsms_acc](https://github.com/delphism84/lnsms_acc)
-
-```
-lnsms_acc/                          # git root
-├── plan.md                         # ← 이 파일
-├── README.md
-├── docs/
-│   ├── architecture-subpath.md
-│   └── setid.md                    # req/req1/setid.md 통합·선행 수정
-├── packages/
-│   ├── lnsms-be/                   # Node Express + Mongo (Platform + Store API)
-│   ├── lnsms-admin-fe/             # Next.js (Platform + Store UI, 동일 빌드)
-│   ├── agent-host/                 # CareReceiverAgent.Host (시리얼/TCP/WebView)
-│   └── agent-fe/                   # Vite 알림·설정 UI → wwwroot 또는 agent-host 연동
-├── legacy/
-│   ├── lunar-backend/              # lunar-agent-acc-web/backend (폐기 예정)
-│   └── lnms-admin/                 # setid 트리 UI (흡수 후 삭제)
-├── deploy/
-│   ├── docker-compose.yml
-│   └── nginx.conf.example
-├── scripts/
-│   ├── local-store.ps1             # memory mongo + BE + FE
-│   └── sync-bundle.ps1             # (선택) CLI export/import
-├── tools/
-│   ├── lnuploader_ftp/
-│   └── lnupdater/
-└── resource/                       # app.json, icons (agent-host 참조)
-```
-
-### 기존 폴더 → 이동 매핑
-
-| 현재 (로컬) | monorepo |
-|-------------|----------|
-| `lnsms_be/` | `packages/lnsms-be/` |
-| `lnsms_admin_fe/` | `packages/lnsms-admin-fe/` |
-| `lunar-agent-acc-web/CareReceiverAgent.Host/` | `packages/agent-host/` |
-| `lunar-agent-acc-web/frontend/` | `packages/agent-fe/` |
-| `lunar-agent-acc-web/backend/` | `legacy/lunar-backend/` |
-| `lunar-agent-acc-web/lnms-admin/` | `legacy/lnms-admin/` |
-
-별도 리포 [lnsms_be](https://github.com/delphism84/lnsms_be), [lnsms_admin_fe](https://github.com/delphism84/lnsms_admin_fe) → monorepo로 **흡수 후 archived**.
+**기본 오프라인 — 로컬 Mongo `necall.guest` 고정.** 기동 시 **로컬 Host JWT 자동 발급** → CRUD는 일반 로그인과 동일.  
+**원격 로그인** = sync 전용(별도 JWT). **replace+경고.** 로컬 Host FE **WS 없음.**
 
 ---
 
-## 2. URL·API 규격 (서브패스, 컨테이너 없음)
+## 1. 명칭 (확정)
 
-| 영역 | UI | API |
-|------|-----|-----|
-| **Platform** | `/platform` | `/api/platform/*` |
-| **Store site** | `/s/{agentId}/{storeId}/*` | `/api/s/{agentId}/{storeId}/*` |
-
-- 매장 클릭 = **새 URL로 이동** (인스턴스 기동 없음).
-- 로컬 PC = Store site **1매장 고정** (`STORE_AGENT_ID`, `STORE_STORE_ID` env).
-
-### Platform API (요약)
-
-- `GET/PUT/DELETE /api/platform/agents`
-- `GET/POST/DELETE /api/platform/stores`, `GET .../stores/by-agent/:agentId`
-- `POST /api/platform/sync/export` — body: `{ agentId, storeId }`
-- `POST /api/platform/sync/import` — body: `{ agentId, storeId, bundle, mode: 'replace'|'merge' }`
-
-### Store API (요약)
-
-- `GET /api/s/:agentId/:storeId/context`
-- `GET|POST|PUT|DELETE /api/s/.../categories`
-- `GET|POST|PUT|DELETE /api/s/.../menus`
-- `GET /api/s/.../eqids`, `DELETE .../eqids/category/:category`
-- `.../sets`, `.../upload`, `.../did` — 레거시 라우트를 스코프 아래로 이전(진행 중)
-
-**레거시** `/api/categories`, `/api/stores` 등은 전환 기간만 유지 후 제거.
+| 필드 | 의미 | 절대 규칙 |
+|------|------|-----------|
+| **userid** | **업체(테넌트) ID** | 매장 ID로 쓰지 않음 |
+| **storeId** | **매장 ID** | 업체 ID로 쓰지 않음 |
+| **eqId** | StoreKey 내 기기 ID | |
+| **StoreKey** | `` `{userid}.{storeId}` `` | 검색·권한·URL·JWT 1차 기준 |
 
 ---
 
-## 3. 이미 스캐폴드에 구현된 것 (2026-05)
-
-경로: `Documents/lnsms-acc-scaffold/packages/` (또는 복사 후 `packages/`)
-
-### BE (`lnsms-be`)
-
-- [x] `src/middleware/storeScope.js`
-- [x] `src/routes/store/` — context, categories, menus, eqids
-- [x] `src/routes/platform/` — agents, stores, sync(export/import 1차)
-- [x] `src/index.js` — `/api/platform`, `/api/s/:agentId/:storeId` mount
-
-### FE (`lnsms-admin-fe`)
-
-- [x] `/platform` — 매장 목록 + 「매장 콘솔 열기」
-- [x] `/s/[agentId]/[storeId]/setting` + device 페이지 복사
-- [x] `AppShell` — `/platform`에서 Sidebar 숨김
-- [x] `storeScopePaths.ts`, `platformApi.ts`, `storeApiScoped.ts`
-- [x] Sidebar 링크 → `/s/...` 경로
-
-### 미완 / 다음
-
-- [ ] `categoryApi` / `menuApi` / `eqidApi` → `createStoreApi(agentId, storeId)` 로 교체
-- [ ] `StoreDetailClient`가 scoped API만 사용하도록 수정
-- [ ] sets/upload/did를 store 라우터에 **스코프 검증** 포함해 이전
-- [ ] `docs/setid.md`에 sync bundle JSON 스키마 (setid-first 규칙)
-- [ ] 로컬: `/` → `/s/{STORE_AGENT_ID}/{STORE_STORE_ID}` 리다이렉트
-- [ ] Agent Host → `store-be` API 호출 (내장 JSON BE 축소)
-- [ ] legacy `backend`, `lnms-admin` 제거
-
----
-
-## 4. 새 Cursor에서 할 일 (순서)
-
-### Step A — 워크스페이스 준비 (완료)
-
-1. 이 폴더(`lnsms-acc-scaffold`)가 **git 루트** — `packages/`, `resource/`, `deploy/`, `scripts/`, `docs/`.
-2. Cursor에서 `plan.md`가 있는 폴더를 워크스페이스로 연다.
-3. 서버는 `deploy/docker-compose.yml` 또는 동일 패키지를 VM에 배포.
-
-### Step B — 규격 (에이전트, 0.5일)
-
-1. `docs/setid.md` 작성/이전 (`lunar-agent-acc-web/req/req1/setid.md` 기반).
-2. sync bundle 필드: `version`, `agentId`, `storeId`, `storeRef`, `collections`, `files[]`, `exportedAt`.
-3. `docs/architecture-subpath.md` 유지.
-
-### Step C — BE 마무리 (1~2일)
-
-1. `routes/store/` — upload, did, sets 스코프 래퍼.
-2. Platform `stores` POST/DELETE와 기존 `routes/stores.js` 중복 정리.
-3. sync import 시 `set_configs`는 `userid` 기준 매칭.
-4. `.env.example`: `MONGODB_URI=memory`, `PORT=40000`.
-
-### Step D — FE 마무리 (2~3일)
-
-1. `StoreDetailClient` + modals → `createStoreApi` 사용.
-2. `/s/.../device/*` 클라이언트가 `storeRef` query 유지 (기존 동작).
-3. Platform: 매장 생성/삭제 UI (platformApi).
-4. Platform: sync UI (export 다운로드 / import 업로드).
-5. Store setting: 서버 DB 동기화 (upload/download via `/api/sync/*`).
-5. `next.config.ts` rewrites — `/api/platform`, `/api/s` (이미 `/api/:path*`면 충분).
-
-### Step E — 로컬·배포 (1일)
-
-1. `scripts/local-store.ps1` 검증.
-2. `deploy/docker-compose.yml` — mongo + lnsms-be + admin-fe.
-3. nginx: `/`, `/platform`, `/s/`, `/api/` → FE/BE.
-
-### Step F — Agent (1~2일, 병렬 가능)
-
-1. `packages/agent-host` — `app.json`에 `StoreApiBase=http://localhost:40000`.
-2. 알림/설정: 로컬 `store-be` + 필요 시 Platform sync.
-3. `frontend` 빌드 산출물 → host `wwwroot` (기존 `build-and-run.bat` 경로 수정).
-
-### Step G — 레거시 제거 (0.5일)
-
-1. `legacy/lunar-backend`, `lnms-admin` README에 deprecated.
-2. FE/Agent에서 `:60000` lnms API 제거 또는 sync 전용으로만 유지.
-3. 레거시 `/api/*` 라우트 삭제 + CHANGELOG.
-
----
-
-## 5. 환경 변수
-
-### `packages/lnsms-be/.env`
-
-```env
-MONGODB_URI=memory
-PORT=40000
-UPLOAD_DIR=./uploads
-```
-
-서버:
-
-```env
-MONGODB_URI=mongodb://mongo:27017/lnsms
-PORT=40000
-```
-
-### `packages/lnsms-admin-fe/.env.local`
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:40000
-API_PROXY_TARGET=http://localhost:40000
-```
-
-로컬 단일 매장 (선택):
-
-```env
-NEXT_PUBLIC_MODE=local-store
-NEXT_PUBLIC_STORE_AGENT_ID=your-agent
-NEXT_PUBLIC_STORE_STORE_ID=your-store
-```
-
----
-
-## 6. 로컬 실행 체크리스트
-
-```powershell
-cd packages\lnsms-be
-npm install
-$env:MONGODB_URI="memory"; $env:PORT="40000"
-npm run dev
-```
-
-```powershell
-cd packages\lnsms-admin-fe
-npm install
-$env:NEXT_PUBLIC_API_URL="http://localhost:40000"
-npm run dev
-```
-
-| URL | 기대 |
-|-----|------|
-| http://localhost:40000/health | `{ status: 'ok' }` |
-| http://localhost:63001/platform | 매장 목록 |
-| http://localhost:63001/s/{agent}/{store}/setting | 매장 UI (데이터 있을 때) |
-
----
-
-## 7. Git / PR 단위 (권장)
-
-| PR | 내용 |
-|----|------|
-| PR1 | monorepo 폴더 이동 + plan.md + README (구조만) |
-| PR2 | BE storeScope + platform/sync (이미 있으면 “이동”) |
-| PR3 | FE /platform + /s/setting 골격 |
-| PR4 | FE api.ts → storeApiScoped 전환 |
-| PR5 | sync UI + setid.md |
-| PR6 | docker-compose + scripts |
-| PR7 | agent-host 경로·빌드 스크립트 |
-| PR8 | legacy 제거 |
-
----
-
-## 8. 아키텍처 다이어그램
+## 2. 아키텍처
 
 ```mermaid
 flowchart TB
-  subgraph server [서버]
-    PM[(MongoDB)]
-    PBE[packages/lnsms-be]
-    PFE[packages/lnsms-admin-fe]
-    PM --> PBE
-    PFE --> PBE
+  subgraph rest [REST — CRUD·sync·upload]
+    PA["/api/admin/*"]
+    PP["/api/platform/stores"]
+    ST["/api/store/{userid}/{storeId}/*"]
+    HS["/api/host/auth · sync · upload · password"]
   end
 
-  subgraph local [로컬 PC]
-    LM[(memory mongo)]
-    LBE[동일 lnsms-be 이미지/코드]
-    LFE[동일 admin-fe 빌드]
-    AH[agent-host]
-    LM --> LBE
-    LFE --> LBE
-    AH --> LBE
+  subgraph ws [WS /ws — 실시간만]
+    BELL[bell ingest / resend]
+    EVT[EVT.changed · upload.done]
   end
 
-  PBE <-->|POST /api/platform/sync/export import| LBE
-  PFE -->|/platform| PFE
-  PFE -->|/s/agent/store| PFE
+  Admin["Admin FE"] --> PA
+  Admin --> PP
+  Admin --> ST
+  Admin --> ws
+
+  Host["Host FE · Agent"] --> HS
+  Host --> ST
+  Host --> ws
+```
+
+| 구분 | REST | WS |
+|------|------|-----|
+| Platform Admin | ✅ stores CRUD | ❌ |
+| Admin `/s/...` 편집 | ✅ Store REST | ✅ 이벤트 수신만 |
+| Host `/s/...` | ✅ Store REST | ✅ 이벤트 수신만 |
+| Agent bell | ✅ (선택 ACK) | ✅ ingest / resend |
+| sets / categories / menus / devices / context | ✅ REST | ❌ (변경 알림만 EVT) |
+
+---
+
+## 3. 확정 결정
+
+### A. 데이터
+
+| | |
+|-|-|
+| A1 | **`stores`만** — 별도 업체 컬렉션 없음 |
+| A2 | 자식 FK = **`{ userid, storeId }`** — storeRef(ObjectId) 없음 |
+| A3 | **eqId** — StoreKey 내부 unique |
+| A4 | setid·phrases·serial **구조** = setid.md. greenfield 필드: **`userid`(업체), `storeId`(매장), `setid`** |
+
+### B. bell (WS)
+
+| | |
+|-|-|
+| B1 | 전 eq resend. eq별 **동일 `eventId` 2회째~5초 디바운스** |
+| B2 | 전 eq (allow-list 없음) |
+| B3 | Mongo `bell_events` |
+| B4 | ingest **5초 내 재전송** 큐 |
+
+### C. Agent · Host (로컬)
+
+| | |
+|-|-|
+| C1 | sets → **REST** (로컬 BE) |
+| C2 | **수동 sync** — 원격 Host JWT + **온라인** 시만 업/다운 (§10) |
+| C3 | WebView — 로컬 REST, **기동 시 auto-login** (`necall.guest`) |
+| C4 | **로컬 Host FE = WS 없음**. 원격 WS는 원격 로그인+온라인 시 Agent bell만 |
+| C5 | **LocalStack** — Host 기동 시 로컬 포트 kill + BE/FE/Mongo (§10) |
+| C6 | **로컬 StoreKey 상수** — 항상 `necall.guest`; CRUD는 **guest 분기 없음** |
+| C7 | **기본 오프라인** — 로컬 Mongo; sync만 원격 JWT |
+| C8 | FE **우측 상단** — `오프라인`/`온라인` 뱃지 + **로그인** 버튼(원격) |
+
+### D. Admin FE
+
+| | |
+|-|-|
+| D1 | `/s/...` **진입 시 WS connect** (이벤트 수신). CRUD는 REST |
+
+### E. 파일·sync
+
+| | |
+|-|-|
+| E1 | **tus** 일괄 upload |
+| E2 | **DID 제외** |
+| E3 | **sync export/import = Host only** — Platform UI·API **없음** |
+
+### F. 운영·인증
+
+| | |
+|-|-|
+| F1 | **Mongo wipe** |
+| F2 | Admin 계정 — env/수동 생성 (하드코드 시드 없음) |
+| F3 | **access + refresh** JWT |
+| F4 | `PUT /api/host/{userid}/{storeId}/password` |
+
+---
+
+## 4. REST API (전체)
+
+### 4.1 Admin (`aud=platform`)
+
+| Method | Path |
+|--------|------|
+| POST | `/api/admin/auth/login` |
+| POST | `/api/admin/auth/refresh` |
+| GET | `/api/admin/auth/verify` |
+| GET/POST/PUT/DELETE | `/api/platform/stores` |
+
+**Platform은 export/import 없음** (E3).
+
+### 4.2 Host (`aud=host`)
+
+| Method | Path |
+|--------|------|
+| POST | `/api/host/auth/login` |
+| POST | `/api/host/auth/refresh` |
+| GET | `/api/host/auth/verify` |
+| PUT | `/api/host/{userid}/{storeId}/password` |
+| POST | `/api/host/{userid}/{storeId}/upload` (tus) |
+| POST | `/api/host/{userid}/{storeId}/sync/export` |
+| POST | `/api/host/{userid}/{storeId}/sync/import` |
+
+### 4.3 Store CRUD (`aud=platform` \| `aud=host`)
+
+Base: **`/api/store/{userid}/{storeId}`**
+
+| Path | ops |
+|------|-----|
+| `/context` | GET, PUT |
+| `/categories`, `/categories/:id` | CRUD |
+| `/menus`, `/menus/:id` | CRUD |
+| `/devices`, `/devices/:id` | CRUD |
+| `/sets`, `/sets/:setid` | CRUD (setid.md) |
+
+- **Admin JWT** → 모든 StoreKey
+- **Host JWT** → claim `{userid, storeId}` 일치만
+
+변경 성공 시 서버가 WS **`EVT.changed`** 브로드캐스트 (클라이언트는 REST로 list/get).
+
+### 4.4 공통
+
+`GET /health`, `GET /uploads/*`
+
+---
+
+## 5. WS (LUNARNET) — 실시간만
+
+Path: `wss://…/ws` — [lunarmsg.md](lunarmsg.md)
+
+| 용도 | tag / topic |
+|------|-------------|
+| 세션 | `lnsms.session` — hello, listen, ping |
+| bell ingest | `lnsms.bell` — `REQ.ingest` |
+| bell resend | `lnsms.bell` — `EVT.resend` |
+| 데이터 변경 알림 | `lnsms.store.{userid}.{storeId}.{entity}` — **`EVT.changed`** |
+| upload 완료 | `lnsms.store.{userid}.{storeId}.upload` — **`EVT.upload.done`** |
+
+**WS에 CRUD REQ 없음** — list/get/create/update/delete 전부 REST.
+
+---
+
+## 6. UI
+
+| 페이지 | REST | WS |
+|--------|------|-----|
+| `/login` | Admin auth (원격) | — |
+| Host `/s/necall/guest/*` | **로컬** Store REST (auto-login JWT) | **없음** |
+| Host **로그인** 버튼 | **원격** `POST /api/host/auth/login` (모달) | — |
+| Host sync 패널 | 원격 sync (**원격 JWT + 온라인**만) | — |
+
+**Host FE AppBar 우측:** `오프라인`/`온라인` 뱃지 + **로그인** 버튼 (§10.3·§10.7).
+
+> Platform `/platform`·Admin `/login`은 원격 admin.necall.com 전용. Host WebView에는 **별도 `/store/login` 페이지 없음** — 로그인 버튼 모달로 대체.
+
+---
+
+## 7. MongoDB
+
+| 컬렉션 | unique |
+|--------|--------|
+| `admin_users` | `username` |
+| `stores` | `{ userid, storeId }` |
+| `categories`, `menus`, `devices` | `{ userid, storeId }` + id |
+| `set_configs` | `{ userid, storeId, setid }` |
+| `bell_events` | `eventId` (TTL) |
+
+F1: **기존 DB 삭제 후 seed.**
+
+---
+
+## 8. set_configs (setid.md + greenfield)
+
+```json
+{
+  "userid": "vendor-a",
+  "storeId": "shop-01",
+  "setid": "set-01",
+  "phrases": {},
+  "serial": {}
+}
+```
+
+- `userid` = **업체 ID** (setid.md의 구 `agentId` 역할)
+- `storeId` = **매장 ID**
+- bundle export/import: `{ userid, storeId, collections… }` — **storeRef 없음**
+
+---
+
+## 10. C# Host · 로컬 스택 (LocalStack)
+
+### 10.1 상수 StoreKey (로컬)
+
+| 상수 | 값 |
+|------|-----|
+| `LOCAL_USERID` | `necall` |
+| `LOCAL_STORE_ID` | `guest` |
+| **StoreKey** | **`necall.guest`** |
+
+- Host 로컬 스택 **전 구간** 이 키만 사용 (Mongo·URL·REST·세팅).
+- **원격 재로그인해도 로컬 StoreKey·로컬 JWT claim은 변경하지 않음.**
+- 원격 sync 시에만 **원격 JWT**의 `{ userid, storeId }` 사용 (§10.6).
+
+### 10.2 Host 기동 · 로컬 auto-login
+
+```
+C# Host 실행 → LocalStack (Mongo · BE · FE)
+WebView → /s/necall/guest/setting
+FE 마운트 → POST local /api/host/auth/login { necall, guest, password }
+         → host_token 저장 → CRUD·가드 = 일반 Host와 동일 (guest 분기 없음)
+AppBar → [오프라인|온라인] + [로그인] (원격 sync JWT)
+```
+
+### 10.3 인증 2축 (로컬 vs 원격)
+
+| | 로컬 `host_token` | 원격 `remote_host_token` |
+|---|-------------------|---------------------------|
+| **발급** | 기동 **자동** (`necall`/`guest`) | AppBar **로그인** 버튼 |
+| **API base** | `127.0.0.1:40000` | `admin.necall.com` |
+| **용도** | CRUD·세팅·tus(로컬) | sync export/import |
+| **StoreKey** | `necall.guest` | JWT `{ userid, storeId }` |
+| **만료/재발급** | refresh (로컬) | 로그인 버튼으로 **재로그인** |
+
+**로그인 버튼 UX**
+
+- AppBar 우측: `[오프라인|온라인]` 뱃지 + **로그인** (또는 로그인됨 시 `{userid}.{storeId}` + 로그아웃)
+- 클릭 → 모달: userid, storeId, password → 원격 login → `remote_host_token` 저장
+- **로컬 `host_token`은 건드리지 않음** — 화면·URL·CRUD 그대로 `necall.guest`
+
+### 10.4 오프라인 우선
+
+| | |
+|-|-|
+| **기본** | 오프라인 — CRUD → 로컬 Mongo (`host_token` = necall.guest) |
+| **WS** | 로컬 Host FE **없음** |
+| **sync** | `remote_host_token` + 온라인일 때만 활성 |
+
+### 10.5 sync (원격만)
+
+**조건:** `remote_host_token` 유효 + **온라인** (뱃지 `온라인`).
+
+| 버튼 | 동작 |
+|------|------|
+| **서버로 업로드** | 로컬 export (`necall.guest`) → 원격 import (`remote JWT` StoreKey, **replace**) |
+| **서버에서 다운로드** | 원격 export → 로컬 import (`necall.guest`, **replace**) |
+
+- **무조건 덮어쓰기** — 실행 전 **경고 확인창**.
+- **원격 미로그인 / 오프라인:** sync 버튼 disabled.
+
+### 10.6 로컬 vs 원격 요약
+
+| | 로컬 | 원격 |
+|---|------|------|
+| **StoreKey** | **`necall.guest` 고정** | JWT `{ userid, storeId }` |
+| **토큰** | `host_token` (auto) | `remote_host_token` (로그인 버튼) |
+| **API** | `127.0.0.1:40000` | `https://admin.necall.com` |
+| **FE URL** | `/s/necall/guest/*` 고정 | sync 호출만 |
+| **WS** | 없음 | 원격 로그인+온라인 시 Agent bell (선택) |
+
+### 10.7 app.json
+
+```json
+{
+  "userid": "necall",
+  "storeId": "guest",
+  "eqId": "eq-local",
+  "localStackEnabled": true,
+  "lnsmsApiBaseLocal": "http://127.0.0.1:40000",
+  "lnsmsUiBaseLocal": "http://127.0.0.1:63001",
+  "lnsmsApiBaseRemote": "https://admin.necall.com",
+  "lnsmsWsUrlRemote": "wss://admin.necall.com/ws",
+  "killExistingOnStart": true,
+  "localGuestPassword": "guest"
+}
+```
+
+- `localGuestPassword`: 로컬 auto-login 전용 (F1 seed와 동일). **원격과 무관.**
+
+### 10.8 FE 상태 · AppBar
+
+- **우측 상단:** `[오프라인|온라인]` + **로그인** 버튼
+- `오프라인` — 기본 (로컬만)
+- `온라인` — 원격 `/health` OK **且** `remote_host_token` 유효
+- sync enabled ↔ `온라인`
+
+### 10.9 set_configs (로컬 예)
+
+```json
+{ "userid": "necall", "storeId": "guest", "setid": "default", "phrases": {}, "serial": {} }
 ```
 
 ---
 
-## 9. 새 Cursor 세션에 넣을 첫 프롬프트 (복사용)
+## 11. TODO (추후)
 
-```
-리포 루트 plan.md를 읽고 Step C~D부터 이어서 구현해줘.
-우선순위:
-1) StoreDetailClient / api.ts를 createStoreApi(storeScope)로 전환
-2) setid.md에 sync bundle 스키마 추가
-3) 로컬 STORE_* env 시 / → /s/... 리다이렉트
-워크스페이스: packages/lnsms-be, packages/lnsms-admin-fe
-```
+| ID | 내용 | 상태 |
+|----|------|------|
+| **T1** | sync 업로드 시 **원격 StoreKey 선택** UI (JWT 외 임의 `{userid,storeId}` 지정) | 추후 |
+| **T2** | bundle `files[]` / tus 미디어 동기화 | 추후 |
 
 ---
 
-## 10. 참고
+## 12. 구현 순서
 
 - 단일 리포 합치기: **권장** (이미 스캐폴드가 그 구조).
 - 매장당 컨테이너 방식: **채택 안 함** → 서브패스만 사용.
 - 스캐폴드 원본: `%USERPROFILE%\Documents\lnsms-acc-scaffold` (또는 `c:\rc\lnsms-acc-scaffold`)
+
+| Phase | 작업 |
+|-------|------|
+| P0 | Mongo wipe · models · admin/host auth + refresh |
+| P1 | FE auto-login + `/s/necall/guest` + 원격 로그인 모달 |
+| P2 | 레거시 삭제 |
+| P3 | **Store REST CRUD** (전 entity) |
+| P4 | WS gateway — session, **EVT only** + bell |
+| P5 | bell_events, 5s debounce, ingest queue |
+| P6 | sync UI (replace+경고), 뱃지·로그인 버튼 gating |
+| P7 | LocalStack + auto-login seed + 원격 sync |
+| **QA** | `packages/qa-bot` — BE health watch + BE/FE smoke (PM2 `lnsms-qa-bot`) |
+
+---
+
+## 13. 삭제
+
+- BE: `/api/s/*`, `/api/stores`, `/api/auth`, `/api/platform/sync/*`, WS store CRUD handlers
+- FE: `api.ts`, `app/stores/**`, DID
+- Agent: `LnsmsRemoteProxy`
+
+---
+
+## 14. 변경 이력
+
+| 날짜 | 내용 |
+|------|------|
+| 2026-05-29 | Final: CRUD=REST, WS=이벤트만 |
+| 2026-05-29 | Host LocalStack, guest necall.guest, sync TODO T1 |
+| 2026-05-29 | 로컬 StoreKey 상수 necall.guest, 오프라인 기본, sync replace+경고, 뱃지 |
+| 2026-05-29 | 기동 auto-login necall.guest, 원격 로그인 버튼·토큰 분리, guest 분기 제거 |
+| 2026-05-30 | WS /ws gateway, Host sync, qa-bot, debug-kill-build-run.bat |

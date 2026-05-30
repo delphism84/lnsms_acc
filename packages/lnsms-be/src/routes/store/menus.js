@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Menu = require('../../models/Menu');
 const Category = require('../../models/Category');
+const { emitChanged } = require('../../ws/gateway');
 
 function storeRefId(req) {
   return req.storeScope.storeRef;
@@ -55,6 +56,7 @@ router.post('/', async (req, res, next) => {
   try {
     const menu = new Menu({ ...req.body, storeId: storeRefId(req) });
     await menu.save();
+    emitChanged(req, 'menus', 'create', String(menu._id));
     res.status(201).json(menu);
   } catch (err) {
     next(err);
@@ -70,6 +72,7 @@ router.put('/:id', async (req, res, next) => {
       { ...req.body, storeId: storeRefId(req) },
       { new: true, runValidators: true }
     );
+    emitChanged(req, 'menus', 'update', String(menu._id));
     res.json(menu);
   } catch (err) {
     next(err);
@@ -81,6 +84,7 @@ router.delete('/:id', async (req, res, next) => {
     const existing = await findOwnedMenu(req, req.params.id);
     if (!existing) return res.status(404).json({ error: 'Menu not found' });
     await Menu.findByIdAndDelete(req.params.id);
+    emitChanged(req, 'menus', 'delete', String(req.params.id));
     res.json({ message: 'Menu deleted successfully' });
   } catch (err) {
     next(err);
@@ -94,6 +98,7 @@ router.post('/:id/resources', async (req, res, next) => {
     menu.resources.push(req.body);
     await menu.save();
     await menu.populate('categoryId', 'name');
+    emitChanged(req, 'menus', 'update', String(menu._id));
     res.json(menu);
   } catch (err) {
     next(err);
@@ -111,6 +116,7 @@ router.delete('/:id/resources/:resourceIndex', async (req, res, next) => {
     menu.resources.splice(resourceIndex, 1);
     await menu.save();
     await menu.populate('categoryId', 'name');
+    emitChanged(req, 'menus', 'update', String(menu._id));
     res.json(menu);
   } catch (err) {
     next(err);

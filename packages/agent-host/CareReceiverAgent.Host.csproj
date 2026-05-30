@@ -58,10 +58,16 @@
     <Copy SourceFiles="..\..\resource\app.json"
           DestinationFiles="$(OutDir)app.json"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\debug-kill-build-run.bat"
+          DestinationFiles="$(OutDir)debug-kill-build-run.bat"
+          SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyAppJsonToRootOnPublish" AfterTargets="Publish">
     <Copy SourceFiles="..\..\resource\app.json"
           DestinationFiles="$(PublishDir)app.json"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\debug-kill-build-run.bat"
+          DestinationFiles="$(PublishDir)debug-kill-build-run.bat"
           SkipUnchangedFiles="true" />
   </Target>
 

@@ -59,14 +59,14 @@ export default function Home() {
         </Link>
 
         <Link
-          href="/did/stores"
+          href={localStoreSettingPath()}
           className="bg-gray-800 rounded-lg shadow-md p-6 hover:bg-gray-750 border border-gray-700 transition-all hover:border-blue-500"
         >
           <div className="text-4xl mb-4 text-white">
             <i className="fas fa-tv"></i>
           </div>
-          <h2 className="text-xl font-semibold mb-2 text-white">DID</h2>
-          <p className="text-gray-400">Store별 Device(EQID) 리소스/옵션</p>
+          <h2 className="text-xl font-semibold mb-2 text-white">Local Host</h2>
+          <p className="text-gray-400">necall.guest 매장 콘솔</p>
         </Link>
       </div>
     </div>

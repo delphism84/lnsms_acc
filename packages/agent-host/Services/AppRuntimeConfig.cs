@@ -17,17 +17,38 @@ namespace CareReceiverAgent.Host.Services
         /// <summary>MongoDB 데이터베이스 이름. 비어 있으면 "agent".</summary>
         public string MongoDatabaseName { get; set; } = "agent";
 
-        /// <summary>QA 검수 모드. true면 실행 시 문구가 없을 때 QA용 기본 데이터 시드.</summary>
-        public bool QaEnabled { get; set; } = true;
-        /// <summary>QA 검수용 유저 ID (표시/연동용).</summary>
-        public string QaUserId { get; set; } = "qa-user-001";
-        /// <summary>QA 검수용 매장 ID (표시/연동용).</summary>
-        public string QaStoreId { get; set; } = "qa-store-001";
+        /// <summary>로컬 StoreKey — 업체 ID (고정 necall).</summary>
+        public string Userid { get; set; } = "necall";
+        /// <summary>로컬 StoreKey — 매장 ID (고정 guest).</summary>
+        public string StoreId { get; set; } = "guest";
+        /// <summary>로컬 auto-login 비밀번호 (F1 seed와 동일).</summary>
+        public string LocalGuestPassword { get; set; } = "guest";
+
+        [Obsolete("Use Userid")]
+        public string QaUserId { get => Userid; set => Userid = value; }
+        [Obsolete("Use StoreId")]
+        public string QaStoreId { get => StoreId; set => StoreId = value; }
+
         /// <summary>로컬 LNSMS(Node) API — lnsms-be (기본 http://127.0.0.1:40000).</summary>
-        public string LnsmsApiBase { get; set; } = "http://127.0.0.1:40000";
+        public string LnsmsApiBaseLocal { get; set; } = "http://127.0.0.1:40000";
+        /// <summary>레거시 alias — LnsmsApiBaseLocal.</summary>
+        public string LnsmsApiBase
+        {
+            get => LnsmsApiBaseLocal;
+            set => LnsmsApiBaseLocal = value;
+        }
 
         /// <summary>매장 Admin FE (Next dev) 베이스 URL.</summary>
-        public string LnsmsUiBase { get; set; } = "http://127.0.0.1:63001";
+        public string LnsmsUiBaseLocal { get; set; } = "http://127.0.0.1:63001";
+        /// <summary>레거시 alias — LnsmsUiBaseLocal.</summary>
+        public string LnsmsUiBase
+        {
+            get => LnsmsUiBaseLocal;
+            set => LnsmsUiBaseLocal = value;
+        }
+
+        public string LnsmsApiBaseRemote { get; set; } = "https://admin.necall.com";
+        public string LnsmsWsUrlRemote { get; set; } = "wss://admin.necall.com/ws";
 
         /// <summary>로컬 스택(mongod + lnsms-be + admin-fe) 자동 기동.</summary>
         public bool LocalStackEnabled { get; set; } = true;
@@ -57,8 +78,12 @@ namespace CareReceiverAgent.Host.Services
         /// <summary>기동 전 27017/40000/63001 리스너 PID만 종료 (node.exe 전체 kill 금지).</summary>
         public bool KillExistingOnStart { get; set; } = true;
 
-        /// <summary>운영 업로드 전용 LNSMS URL. 설정 업로드(세트 PUT/POST)만 이 주소로 호출 (기본 https://admin.necall.com).</summary>
-        public string LnsmsRemoteUploadBase { get; set; } = "https://admin.necall.com";
+        /// <summary>운영 sync·업로드 LNSMS URL.</summary>
+        public string LnsmsRemoteUploadBase
+        {
+            get => LnsmsApiBaseRemote;
+            set => LnsmsApiBaseRemote = value;
+        }
 
         /// <summary>
         /// 시리얼 v4 암호화(보안) 마스터 스위치. false(기본)면 모든 COM 연결에서 암호화 비활성(포트별 저장값 무시).
@@ -88,10 +113,10 @@ namespace CareReceiverAgent.Host.Services
 
         public string BuildStoreSettingUrl()
         {
-            var baseUi = (string.IsNullOrWhiteSpace(LnsmsUiBase) ? "http://127.0.0.1:63001" : LnsmsUiBase).TrimEnd('/');
-            var agent = string.IsNullOrWhiteSpace(QaUserId) ? "a1" : QaUserId.Trim();
-            var store = string.IsNullOrWhiteSpace(QaStoreId) ? "s1" : QaStoreId.Trim();
-            return $"{baseUi}/s/{agent}/{store}/setting";
+            var baseUi = (string.IsNullOrWhiteSpace(LnsmsUiBaseLocal) ? "http://127.0.0.1:63001" : LnsmsUiBaseLocal).TrimEnd('/');
+            var uid = string.IsNullOrWhiteSpace(Userid) ? "necall" : Userid.Trim();
+            var sid = string.IsNullOrWhiteSpace(StoreId) ? "guest" : StoreId.Trim();
+            return $"{baseUi}/s/{uid}/{sid}/setting";
         }
 
         public static void Save(AppRuntimeConfig cfg)
