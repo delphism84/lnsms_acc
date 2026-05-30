@@ -33,4 +33,4 @@ PORT=40000
 NEXT_PUBLIC_API_URL=http://localhost:40000
 ```
 
-Apply scaffold: run `scripts/apply-to-lunar-sms.ps1` from Documents scaffold (requires write ACL on lunar-sms).
+Local development: see [dev.md](../dev.md) and [agent-local-stack.md](agent-local-stack.md).

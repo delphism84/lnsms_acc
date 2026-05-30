@@ -7,6 +7,13 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- WebView2 패키지가 WPF용 WindowsBase 5.x를 끌어옴 — WinForms만 쓰므로 런타임 무해 -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <!-- Debug: 콘솔에 [LocalStack] 로그 표시 (build-and-run-lnsms-stack.bat) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
   
   <PropertyGroup>

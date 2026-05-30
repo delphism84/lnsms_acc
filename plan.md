@@ -288,5 +288,4 @@ flowchart TB
 
 - 단일 리포 합치기: **권장** (이미 스캐폴드가 그 구조).
 - 매장당 컨테이너 방식: **채택 안 함** → 서브패스만 사용.
-- 스캐폴드 원본: `%USERPROFILE%\Documents\lnsms-acc-scaffold`
-- AMD 경로 `lunar-sms`는 ACL이 RX-only일 수 있음 → 개발은 쓰기 가능 경로 권장.
+- 스캐폴드 원본: `%USERPROFILE%\Documents\lnsms-acc-scaffold` (또는 `c:\rc\lnsms-acc-scaffold`)

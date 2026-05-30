@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Net.NetworkInformation;
 
 namespace CareReceiverAgent.Host.Services;
 
@@ -43,14 +44,36 @@ public sealed class LocalStackSupervisor : IDisposable
 
         if (_cfg.KillExistingOnStart)
         {
-            KillListenersOnPorts(new[] { _cfg.MongoPort, _cfg.LnsmsBePort, _cfg.LnsmsFePort });
-            await Task.Delay(500, ct).ConfigureAwait(false);
+            var killPorts = new[] { _cfg.MongoPort, _cfg.LnsmsBePort, _cfg.LnsmsFePort, _cfg.AgentApiPort };
+            KillListenersOnPorts(killPorts);
+            await Task.Delay(800, ct).ConfigureAwait(false);
+            KillListenersOnPorts(killPorts);
+            await WaitForPortsFreeAsync(killPorts, TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
         }
 
-        if (string.Equals(_cfg.MongoMode, "external", StringComparison.OrdinalIgnoreCase))
+        var useExternalMongo = string.Equals(_cfg.MongoMode, "external", StringComparison.OrdinalIgnoreCase);
+        if (useExternalMongo)
         {
-            StartMongo(mongoDir);
-            await WaitForTcpPortAsync(_cfg.MongoPort, TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+            var mongod = ResolveMongoExe();
+            if (mongod == null)
+            {
+                if (_cfg.MongoFallbackToMemory)
+                {
+                    Console.WriteLine(
+                        "[LocalStack] mongod not found — using MONGODB_URI=memory. " +
+                        "Install MongoDB Community Server or set app.json mongoExe for persistent data.");
+                    useExternalMongo = false;
+                }
+                else
+                {
+                    throw new FileNotFoundException(BuildMongodNotFoundMessage());
+                }
+            }
+            else
+            {
+                StartMongo(mongoDir, mongod);
+                await WaitForTcpPortAsync(_cfg.MongoPort, TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+            }
         }
 
         var beDir = Path.Combine(repoRoot, "packages", "lnsms-be");
@@ -60,7 +83,7 @@ public sealed class LocalStackSupervisor : IDisposable
         if (!Directory.Exists(feDir))
             throw new DirectoryNotFoundException($"lnsms-admin-fe not found: {feDir}");
 
-        var mongoUri = string.Equals(_cfg.MongoMode, "external", StringComparison.OrdinalIgnoreCase)
+        var mongoUri = useExternalMongo
             ? $"mongodb://127.0.0.1:{_cfg.MongoPort}/lnsms"
             : "memory";
 
@@ -136,24 +159,27 @@ public sealed class LocalStackSupervisor : IDisposable
         return Path.Combine(repoRoot, "data", "mongo");
     }
 
-    private void StartMongo(string dataDir)
+    private void StartMongo(string dataDir, string mongodExe)
     {
-        var mongod = ResolveMongoExe();
-        if (string.IsNullOrEmpty(mongod) || !File.Exists(mongod))
-        {
-            throw new FileNotFoundException(
-                "mongod not found. Install MongoDB or set app.json mongoExe to mongod.exe path.");
-        }
-
-        var args = $"--dbpath \"{dataDir}\" --port {_cfg.MongoPort}";
-        Console.WriteLine($"[LocalStack] mongod {args}");
-        StartProcess("mongod", mongod, args, dataDir, null);
+        var args = $"--dbpath \"{dataDir}\" --port {_cfg.MongoPort} --bind_ip 127.0.0.1";
+        Console.WriteLine($"[LocalStack] {mongodExe} {args}");
+        StartProcess("mongod", mongodExe, args, dataDir, null);
     }
+
+    private string BuildMongodNotFoundMessage() =>
+        "mongod not found.\r\n" +
+        "• Install: https://www.mongodb.com/try/download/community\r\n" +
+        "• Or set app.json \"mongoExe\": \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.0\\\\bin\\\\mongod.exe\"\r\n" +
+        "• Or set \"mongoMode\": \"memory\" / \"mongoFallbackToMemory\": true";
 
     private string? ResolveMongoExe()
     {
-        if (!string.IsNullOrWhiteSpace(_cfg.MongoExe) && File.Exists(_cfg.MongoExe.Trim()))
-            return Path.GetFullPath(_cfg.MongoExe.Trim());
+        if (!string.IsNullOrWhiteSpace(_cfg.MongoExe))
+        {
+            var configured = _cfg.MongoExe.Trim().Trim('"');
+            if (File.Exists(configured))
+                return Path.GetFullPath(configured);
+        }
 
         var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
         foreach (var segment in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
@@ -162,12 +188,29 @@ public sealed class LocalStackSupervisor : IDisposable
             if (File.Exists(candidate)) return candidate;
         }
 
-        var common = new[]
+        foreach (var root in new[]
+                 {
+                     @"C:\Program Files\MongoDB\Server",
+                     @"C:\Program Files (x86)\MongoDB\Server",
+                 })
         {
-            @"C:\Program Files\MongoDB\Server\8.0\bin\mongod.exe",
-            @"C:\Program Files\MongoDB\Server\7.0\bin\mongod.exe",
-        };
-        return common.FirstOrDefault(File.Exists);
+            if (!Directory.Exists(root)) continue;
+            try
+            {
+                var newest = Directory.GetDirectories(root)
+                    .Select(d => Path.Combine(d, "bin", "mongod.exe"))
+                    .Where(File.Exists)
+                    .OrderByDescending(p => p, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+                if (newest != null) return newest;
+            }
+            catch
+            {
+                // ignore scan errors
+            }
+        }
+
+        return null;
     }
 
     private static string FindNodeExe()
@@ -191,6 +234,7 @@ public sealed class LocalStackSupervisor : IDisposable
     private void StartNpmDev(string label, string workingDirectory, IReadOnlyDictionary<string, string?>? env)
     {
         Console.WriteLine($"[LocalStack] {label}: npm run dev ({workingDirectory})");
+        // package.json dev 스크립트에 -p 63001 포함 — 중복 -p 시 next가 포트를 두 번 바인딩함
         StartProcess(label, "cmd.exe", "/c npm run dev", workingDirectory, env);
     }
 
@@ -261,20 +305,57 @@ public sealed class LocalStackSupervisor : IDisposable
 
     private static void KillListenersOnPorts(IEnumerable<int> ports)
     {
-        var portList = string.Join(",", ports.Distinct());
+        var portList = string.Join(",", ports.Where(p => p > 0).Distinct());
         var script = $@"
+$ErrorActionPreference = 'SilentlyContinue'
 $ports = @({portList})
 foreach ($port in $ports) {{
-  $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-  foreach ($c in $conns) {{
-    $pid = $c.OwningProcess
-    if ($pid -gt 0) {{
-      Write-Host ""[LocalStack] kill port $port PID $pid""
-      Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+  Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
+    ForEach-Object {{ $_.OwningProcess }} |
+    Sort-Object -Unique |
+    ForEach-Object {{
+      if ($_ -gt 0) {{
+        Write-Host ""[LocalStack] kill port $port PID $_""
+        Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+      }}
     }}
-  }}
 }}";
         RunPowerShell(script);
+    }
+
+    private static async Task WaitForPortsFreeAsync(IEnumerable<int> ports, TimeSpan timeout, CancellationToken ct)
+    {
+        var list = ports.Where(p => p > 0).Distinct().ToList();
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (list.All(p => !IsPortListening(p)))
+            {
+                Console.WriteLine($"[LocalStack] ports free: {string.Join(", ", list)}");
+                return;
+            }
+
+            await Task.Delay(400, ct).ConfigureAwait(false);
+        }
+
+        var busy = list.Where(IsPortListening).ToList();
+        throw new TimeoutException(
+            $"Ports still in use after kill: {string.Join(", ", busy)}. Run scripts\\kill-lnsms-ports.ps1");
+    }
+
+    private static bool IsPortListening(int port)
+    {
+        try
+        {
+            return IPGlobalProperties.GetIPGlobalProperties()
+                .GetActiveTcpListeners()
+                .Any(ep => ep.Port == port);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void RunPowerShell(string script)

@@ -9,12 +9,12 @@
 | lnsms-be | 40000 | Platform + Store API |
 | lnsms-admin-fe | 63001 | 매장 콘솔 WebView |
 
-## 경로 (스캐폴드)
+## 경로
 
-- Monorepo: `c:\rc\lnsms-acc-scaffold`
-- Mongo data: `data\mongo`
+- Monorepo: 이 리포 루트 (`repoRoot` in `resource/app.json`)
 - C# Host: `packages\agent-host`
-- 설정: `resource\app.json` → 빌드 시 exe 옆 `app.json`
+- Mongo data: `{repoRoot}\data\mongo`
+- 설정: `resource\app.json` → 빌드/실행 시 exe 옆 `app.json`
 
 ## WebView 초기 URL
 
@@ -34,6 +34,8 @@ http://127.0.0.1:63001/s/{qaUserId}/{qaStoreId}/setting
   "lnsmsUiBase": "http://127.0.0.1:63001",
   "localStackEnabled": true,
   "mongoMode": "external",
+  "mongoFallbackToMemory": true,
+  "mongoExe": "",
   "mongoDataDir": "C:\\rc\\lnsms-acc-scaffold\\data\\mongo",
   "repoRoot": "C:\\rc\\lnsms-acc-scaffold",
   "killExistingOnStart": true
@@ -48,7 +50,6 @@ http://127.0.0.1:63001/s/{qaUserId}/{qaStoreId}/setting
 |----------|------|
 | `scripts\dev-agent.ps1` | mongod + BE + FE (Host 없이 검증) |
 | `scripts\start-mongo.ps1` | mongod만 |
-| `scripts\local-store.ps1` | memory Mongo + BE + FE |
 | `scripts\local-store.ps1` | memory Mongo + BE + FE (단일 매장) |
 
 `resource/app.json`의 `repoRoot`는 이 리포 루트 절대 경로로 맞춥니다.

@@ -148,33 +148,6 @@ async function bootstrap() {
     } catch (e) {
       console.warn('[migration] field standardization skipped/failed:', e?.message || e);
     }
-
-    // 기본 admin 계정 생성
-    const AdminUser = require('./models/AdminUser');
-
-    // cube 계정 생성
-    const cubeUser = await AdminUser.findOne({ username: 'cube' });
-    if (!cubeUser) {
-      const newCubeUser = new AdminUser({
-        username: 'cube',
-        password: 'Eldpdj!@34',
-        role: 'superadmin'
-      });
-      await newCubeUser.save();
-      console.log('✅ 기본 관리자 계정 생성: cube / Eldpdj!@34');
-    }
-
-    // admin 계정 생성
-    const adminUser = await AdminUser.findOne({ username: 'admin' });
-    if (!adminUser) {
-      const newAdminUser = new AdminUser({
-        username: 'admin',
-        password: 'admin',
-        role: 'superadmin'
-      });
-      await newAdminUser.save();
-      console.log('✅ 기본 관리자 계정 생성: admin / admin');
-    }
   } catch (err) {
     console.error('MongoDB 연결 실패:', err);
   }

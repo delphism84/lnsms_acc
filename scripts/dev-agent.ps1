@@ -25,14 +25,22 @@ function Kill-PortListeners([int[]]$Ports) {
 }
 
 if (-not $NoKill) {
-    Kill-PortListeners @(27017, 40000, 63001)
-    Start-Sleep -Seconds 1
+    $killScript = Join-Path (Split-Path $PSScriptRoot -Parent) "scripts\kill-lnsms-ports.ps1"
+    & $killScript -Ports @(27017, 40000, 63001)
 }
 
 if (-not $SkipMongo) {
     New-Item -ItemType Directory -Force -Path $mongoData | Out-Null
-    $mongod = (Get-Command mongod -ErrorAction SilentlyContinue)?.Source
-    if (-not $mongod) { throw "mongod not in PATH. Install MongoDB or add to PATH." }
+    $mongodCmd = Get-Command mongod -ErrorAction SilentlyContinue
+    $mongod = if ($mongodCmd) { $mongodCmd.Source } else { $null }
+    if (-not $mongod) {
+        $candidates = @(
+            "C:\Program Files\MongoDB\Server\8.0\bin\mongod.exe",
+            "C:\Program Files\MongoDB\Server\7.0\bin\mongod.exe"
+        )
+        $mongod = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    if (-not $mongod) { throw "mongod not found. Install MongoDB Community or set PATH / use Host with mongoFallbackToMemory." }
     Start-Process $mongod -ArgumentList "--dbpath `"$mongoData`" --port 27017" -WindowStyle Hidden
     Write-Host "mongod -> $mongoData"
     Start-Sleep -Seconds 2

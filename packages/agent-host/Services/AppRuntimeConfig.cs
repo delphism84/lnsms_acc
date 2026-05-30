@@ -35,6 +35,9 @@ namespace CareReceiverAgent.Host.Services
         /// <summary>external = mongod data dir / memory = BE 인메모리 Mongo (Supervisor 미사용 시 BE env).</summary>
         public string MongoMode { get; set; } = "external";
 
+        /// <summary>mongoMode=external 이고 mongod 없을 때 memory로 기동 (데이터는 재시작 시 초기화).</summary>
+        public bool MongoFallbackToMemory { get; set; } = true;
+
         public string? MongoDataDir { get; set; }
 
         public int MongoPort { get; set; } = 27017;
@@ -44,6 +47,9 @@ namespace CareReceiverAgent.Host.Services
         public int LnsmsBePort { get; set; } = 40000;
 
         public int LnsmsFePort { get; set; } = 63001;
+
+        /// <summary>에이전트 Kestrel 포트(killExistingOnStart 시 함께 정리).</summary>
+        public int AgentApiPort { get; set; } = 58000;
 
         /// <summary>packages/lnsms-be·lnsms-admin-fe 가 있는 monorepo 루트.</summary>
         public string? RepoRoot { get; set; }

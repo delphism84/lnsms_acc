@@ -11,6 +11,8 @@
   "lnsmsUiBase": "http://127.0.0.1:63001",
   "localStackEnabled": true,
   "mongoMode": "external",
+  "mongoFallbackToMemory": true,
+  "mongoExe": "",
   "mongoDataDir": "C:\\rc\\lnsms-acc-scaffold\\data\\mongo",
   "mongoPort": 27017,
   "lnsmsBePort": 40000,
