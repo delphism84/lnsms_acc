@@ -28,6 +28,48 @@ import {
   faKey,
 } from '@fortawesome/free-solid-svg-icons';
 
+const LIST_PAGE_SIZE = 50;
+
+function ListPager({
+  page,
+  total,
+  pageSize,
+  onPageChange,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  return (
+    <div className="store-action-row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+      <span className="store-meta-label">
+        {total.toLocaleString()}건 · {page + 1}/{totalPages} 페이지
+      </span>
+      <div className="store-action-row">
+        <button
+          type="button"
+          className="store-action-sm store-action-neutral"
+          disabled={page <= 0}
+          onClick={() => onPageChange(page - 1)}
+        >
+          이전
+        </button>
+        <button
+          type="button"
+          className="store-action-sm store-action-neutral"
+          disabled={page >= totalPages - 1}
+          onClick={() => onPageChange(page + 1)}
+        >
+          다음
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function StoreDetailClient({ agentId, storeId }: { agentId: string; storeId: string }) {
   const router = useRouter();
   const scopedApi = useMemo(() => createStoreApi(agentId, storeId), [agentId, storeId]);
@@ -188,6 +230,26 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
   });
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<StoreBackupTab>('store');
+  const [categoryPage, setCategoryPage] = useState(0);
+  const [menuPage, setMenuPage] = useState(0);
+
+  const pagedCategories = useMemo(() => {
+    const start = categoryPage * LIST_PAGE_SIZE;
+    return categories.slice(start, start + LIST_PAGE_SIZE);
+  }, [categories, categoryPage]);
+
+  const pagedMenus = useMemo(() => {
+    const start = menuPage * LIST_PAGE_SIZE;
+    return menus.slice(start, start + LIST_PAGE_SIZE);
+  }, [menus, menuPage]);
+
+  useEffect(() => {
+    setCategoryPage(0);
+  }, [categories.length, activeTab]);
+
+  useEffect(() => {
+    setMenuPage(0);
+  }, [menus.length, activeTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -868,7 +930,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                   </td>
                 </tr>
               ) : (
-                categories.map((category) => (
+                pagedCategories.map((category) => (
                   <tr key={category._id}>
                     <td className="font-medium">{category.name}</td>
                     <td>{category.description || '-'}</td>
@@ -900,6 +962,12 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
             </tbody>
           </table>
         </div>
+        <ListPager
+          page={categoryPage}
+          total={categories.length}
+          pageSize={LIST_PAGE_SIZE}
+          onPageChange={setCategoryPage}
+        />
       </div>
           )}
 
@@ -942,7 +1010,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                   </td>
                 </tr>
               ) : (
-                menus.map((menu) => {
+                pagedMenus.map((menu) => {
                   const categoryName =
                     typeof menu.categoryId === 'string'
                       ? categories.find((c) => c._id === menu.categoryId)?.name || '-'
@@ -968,6 +1036,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
             </tbody>
           </table>
         </div>
+        <ListPager page={menuPage} total={menus.length} pageSize={LIST_PAGE_SIZE} onPageChange={setMenuPage} />
       </div>
           )}
 

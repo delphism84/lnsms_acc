@@ -14,6 +14,6 @@ export default function LoginPage() {
 
   if (mode === null) return null;
 
-  if (mode === 'store') return <StoreLoginPage />;
+  if (mode === 'store' || mode === 'local') return <StoreLoginPage />;
   return <PlatformLoginPage />;
 }
