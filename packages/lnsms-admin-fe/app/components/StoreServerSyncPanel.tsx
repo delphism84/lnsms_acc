@@ -60,22 +60,22 @@ export default function StoreServerSyncPanel({ onSynced }: Props) {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8 border border-gray-700">
-      <h2 className="text-xl font-semibold text-white mb-2">서버 DB 동기화</h2>
-      <p className="text-sm text-gray-400 mb-4">
-        로컬 <span className="text-gray-200">{LOCAL_USERID}.{LOCAL_STORE_ID}</span>
+    <div className="store-sync-panel">
+      <h2>서버 DB 동기화</h2>
+      <p>
+        로컬 <strong>{LOCAL_USERID}.{LOCAL_STORE_ID}</strong>
         {remoteKey ? (
-          <> ↔ 원격 <span className="text-gray-200">{remoteKey}</span></>
+          <> ↔ 원격 <strong>{remoteKey}</strong></>
         ) : (
-          <> · AppBar <strong className="text-gray-300">로그인</strong> 후 사용</>
+          <> · AppBar <strong>로그인</strong> 후 사용</>
         )}
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="store-action-row">
         <button
           type="button"
           disabled={!!busy || !online}
           onClick={() => void run('upload')}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40"
+          className="store-action-sm store-action-primary settings-primary-btn"
           title={!online ? '원격 로그인 + 온라인 필요' : undefined}
         >
           {busy === 'upload' ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faCloudArrowUp} />}
@@ -85,15 +85,15 @@ export default function StoreServerSyncPanel({ onSynced }: Props) {
           type="button"
           disabled={!!busy || !online}
           onClick={() => void run('download')}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-gray-700 hover:bg-gray-600 text-white text-sm disabled:opacity-40"
+          className="store-action-sm store-action-neutral settings-neutral-btn"
           title={!online ? '원격 로그인 + 온라인 필요' : undefined}
         >
           {busy === 'download' ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faCloudArrowDown} />}
           서버에서 다운로드
         </button>
       </div>
-      {message && <p className="mt-3 text-sm text-green-400">{message}</p>}
-      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+      {message && <p className="store-sync-msg-ok">{message}</p>}
+      {error && <p className="store-sync-msg-err">{error}</p>}
     </div>
   );
 }

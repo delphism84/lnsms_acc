@@ -12,9 +12,6 @@ export default function StoreSiteLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-full flex flex-col">
       <StoreWsConnector userid={userid} storeId={storeId} />
-      <div className="shrink-0 border-b border-gray-800 bg-gray-950/50 px-4 py-2 text-sm text-gray-400">
-        StoreKey <span className="text-white">{userid}.{storeId}</span>
-      </div>
       <div className="flex-1 min-h-0">{children}</div>
     </div>
   );

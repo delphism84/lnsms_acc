@@ -10,9 +10,9 @@ import { auth } from '@/src/lib/auth';
 import { hostAuth } from '@/src/lib/hostAuth';
 import { useStoreEvents } from '@/src/lib/useStoreEvents';
 import StoreServerSyncPanel from '@/app/components/StoreServerSyncPanel';
+import StoreBackupShell, { type StoreBackupTab } from '@/app/components/store/StoreBackupShell';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faArrowLeft,
   faPlus,
   faEdit,
   faTrash,
@@ -189,6 +189,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
     categoryId: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<StoreBackupTab>('store');
 
   useEffect(() => {
     let cancelled = false;
@@ -514,16 +515,16 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
 
   if (loading) {
     return (
-      <div className="p-6">
-        <p className="text-gray-400">로딩 중...</p>
+      <div className="store-backup-loading">
+        <p>로딩 중...</p>
       </div>
     );
   }
 
   if (!store) {
     return (
-      <div className="p-6">
-        <p className="text-red-500">스토어를 찾을 수 없습니다.</p>
+      <div className="store-backup-loading">
+        <p className="store-sync-msg-err">스토어를 찾을 수 없습니다.</p>
       </div>
     );
   }
@@ -531,23 +532,25 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
   // NOTE: 아래 JSX는 기존 /stores/[agentid]/[userid] 페이지의 내용을 그대로 유지합니다.
   // (라우트만 분리해서 /store/setting 등에서도 재사용)
   return (
-    <div className="p-6">
-      <div className="mb-8 flex items-center">
-        <Link href={agentListHref} className="text-blue-400 hover:text-blue-300 flex items-center gap-2">
-          <FontAwesomeIcon icon={faArrowLeft} />
-          <span>매장ID(Store ID) 목록</span>
-        </Link>
-      </div>
+    <StoreBackupShell
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      showPlatformBack={!isStoreSite}
+      platformBackHref={agentListHref}
+    >
+      {(tab) => (
+        <>
+          {error ? <div className="store-error-banner">{error}</div> : null}
 
-      {/* Store 정보 수정 섹션 */}
-      <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8 border border-gray-700">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <FontAwesomeIcon icon={faStore} />
-            <span>Store 정보</span>
+          {tab === 'store' && (
+      <div className="settings-section store-section-card">
+        <div className="section-header">
+          <h2>
+            <FontAwesomeIcon icon={faStore} /> Store 정보
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="store-action-row">
             <button
+              type="button"
               onClick={() => {
                 setStoreForm({
                   name: store.name,
@@ -662,93 +665,94 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                 setError(null);
                 setShowStoreModal(true);
               }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              className="add-button store-action-sm"
             >
               <FontAwesomeIcon icon={faEdit} />
               <span>수정</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 setError(null);
                 setStorePw('');
                 setShowStorePasswordModal(true);
               }}
-              className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
+              className="settings-neutral-btn store-action-sm"
             >
               <FontAwesomeIcon icon={faKey} />
               <span>비번 수정</span>
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-300">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <span className="text-gray-400">이름:</span> <span className="text-white font-medium">{store.name}</span>
+            <span className="store-meta-label">이름:</span>{' '}
+            <span className="store-meta-value">{store.name}</span>
           </div>
           <div>
-            <span className="text-gray-400">에이전트ID(Agent ID):</span>{' '}
-            <span className="text-white font-medium">{store.agentId || store.agentid}</span>
+            <span className="store-meta-label">에이전트ID(Agent ID):</span>{' '}
+            <span className="store-meta-value">{store.agentId || store.agentid}</span>
           </div>
           <div>
-            <span className="text-gray-400">매장ID(Store ID):</span>{' '}
-            <span className="text-white font-medium">{store.storeId || store.userid}</span>
+            <span className="store-meta-label">매장ID(Store ID):</span>{' '}
+            <span className="store-meta-value">{store.storeId || store.userid}</span>
           </div>
           {store.description && (
             <div>
-              <span className="text-gray-400">설명:</span> <span className="text-white">{store.description}</span>
+              <span className="store-meta-label">설명:</span>{' '}
+              <span className="store-meta-value">{store.description}</span>
             </div>
           )}
         </div>
       </div>
+          )}
 
-      <StoreServerSyncPanel onSynced={loadData} />
+          {tab === 'sync' && <StoreServerSyncPanel onSynced={loadData} />}
 
-      {/* EQID 관리 섹션 */}
-      <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8 border border-gray-700">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <FontAwesomeIcon icon={faImages} />
-            <span>기기 관리</span>
+          {tab === 'device' && (
+      <div className="settings-section store-section-card">
+        <div className="section-header">
+          <h2>
+            <FontAwesomeIcon icon={faImages} /> 기기 관리
           </h2>
           <button
+            type="button"
             onClick={() => {
               setEditingEqid(null);
               setEqidForm({ eqid: '', displayTime: 5000, enabled: true });
               setError(null);
               setShowEqidModal(true);
             }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            className="add-button store-action-sm"
           >
             <FontAwesomeIcon icon={faPlus} />
             <span>장치ID(Device ID) 추가</span>
           </button>
         </div>
 
-        {error && <div className="bg-red-800 text-white p-3 rounded-md mb-4">{error}</div>}
-
         <div className="space-y-4">
           {eqids.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
+            <div className="store-empty">
               <FontAwesomeIcon icon={faInbox} className="text-4xl mb-4 block" />
               <p>등록된 장치ID(Device ID)가 없습니다.</p>
             </div>
           ) : (
             eqids.map((eqid) => (
-              <div key={eqid._id} className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+              <div key={eqid._id} className="store-device-card">
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-white">{eqid.deviceId || eqid.eqid}</h3>
+                      <h3 className="text-lg font-semibold">{eqid.deviceId || eqid.eqid}</h3>
                       <button
+                        type="button"
                         onClick={() => toggleEqidEnabled(eqid)}
-                        className={`px-3 py-1 rounded-md text-sm flex items-center gap-2 ${
-                          eqid.enabled ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-                        }`}
+                        className={eqid.enabled ? 'store-badge-on' : 'store-badge-off'}
                       >
                         <FontAwesomeIcon icon={eqid.enabled ? faToggleOn : faToggleOff} />
                         <span>{eqid.enabled ? '사용중' : '비활성'}</span>
                       </button>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-400">
+                    <div className="flex items-center gap-4 text-sm store-meta-label">
                       <span className="flex items-center gap-1">
                         <FontAwesomeIcon icon={faClock} />
                         <span>표시시간: {eqid.displayTime}ms</span>
@@ -759,8 +763,9 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                       </span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="store-action-row">
                     <button
+                      type="button"
                       onClick={() => {
                         setSelectedEqid(eqid);
                         // 리소스 상태 초기화
@@ -775,12 +780,13 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                         setResourceStates(states);
                         setShowResourceModal(true);
                       }}
-                      className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm flex items-center gap-1"
+                      className="store-action-sm store-action-primary"
                     >
                       <FontAwesomeIcon icon={faImages} />
                       <span>리소스</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setEditingEqid(eqid);
                         setEqidForm({
@@ -791,14 +797,15 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                         setError(null);
                         setShowEqidModal(true);
                       }}
-                      className="px-3 py-1 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm flex items-center gap-1"
+                      className="store-action-sm store-action-warn"
                     >
                       <FontAwesomeIcon icon={faEdit} />
                       <span>수정</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleEqidDelete(eqid._id)}
-                      className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm flex items-center gap-1"
+                      className="store-action-sm store-action-danger"
                     >
                       <FontAwesomeIcon icon={faTrash} />
                       <span>삭제</span>
@@ -820,7 +827,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                       </div>
                     ))}
                     {eqid.resources.length > 4 && (
-                      <div className="w-full h-20 bg-gray-600 rounded-md flex items-center justify-center text-gray-400 text-sm">
+                      <div className="w-full h-20 bg-gray-200 rounded-md flex items-center justify-center store-meta-label text-sm">
                         +{eqid.resources.length - 4}
                       </div>
                     )}
@@ -831,15 +838,17 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
           )}
         </div>
       </div>
+          )}
 
-      {/* 카테고리 섹션 */}
-      <div className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700 mb-8">
-        <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+          {tab === 'category' && (
+      <div className="settings-section store-section-card">
+        <div className="section-header">
+          <h2>
             <FontAwesomeIcon icon={faFolder} /> 카테고리
           </h2>
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            type="button"
+            className="add-button store-action-sm"
             onClick={() => {
               setEditingCategory(null);
               setCategoryForm({ name: '', description: '', order: 0 });
@@ -851,32 +860,33 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
             <span>카테고리 추가</span>
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-700">
-            <thead className="bg-gray-700">
+        <div className="store-table-wrap">
+          <table className="store-table">
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">이름</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">설명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">순서</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">작업</th>
+                <th>이름</th>
+                <th>설명</th>
+                <th>순서</th>
+                <th>작업</th>
               </tr>
             </thead>
-            <tbody className="bg-gray-800 divide-y divide-gray-700">
+            <tbody>
               {categories.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center text-gray-400">
+                  <td colSpan={4} className="store-empty">
                     등록된 카테고리가 없습니다.
                   </td>
                 </tr>
               ) : (
                 categories.map((category) => (
-                  <tr key={category._id} className="hover:bg-gray-750">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{category.name}</td>
-                    <td className="px-6 py-4 text-sm text-gray-400">{category.description || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{category.order}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <tr key={category._id}>
+                    <td className="font-medium">{category.name}</td>
+                    <td>{category.description || '-'}</td>
+                    <td>{category.order}</td>
+                    <td>
                       <button
-                        className="text-blue-400 hover:text-blue-300 mr-4"
+                        type="button"
+                        className="store-link mr-4"
                         onClick={() => {
                           setEditingCategory(category);
                           setCategoryForm({
@@ -890,7 +900,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                       >
                         <FontAwesomeIcon icon={faEdit} /> 수정
                       </button>
-                      <button className="text-red-400 hover:text-red-300" onClick={() => handleDeleteCategory(category._id)}>
+                      <button type="button" className="store-link store-link-danger" onClick={() => handleDeleteCategory(category._id)}>
                         <FontAwesomeIcon icon={faTrash} /> 삭제
                       </button>
                     </td>
@@ -901,15 +911,17 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
           </table>
         </div>
       </div>
+          )}
 
-      {/* 메뉴 섹션 */}
-      <div className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700">
-        <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+          {tab === 'menu' && (
+      <div className="settings-section store-section-card">
+        <div className="section-header">
+          <h2>
             <FontAwesomeIcon icon={faUtensils} /> 메뉴
           </h2>
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            type="button"
+            className="add-button store-action-sm"
             onClick={() => {
               setEditingMenu(null);
               setMenuForm({ name: '', description: '', price: 0, order: 0, categoryId: '' });
@@ -921,21 +933,21 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
             <span>메뉴 추가</span>
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-700">
-            <thead className="bg-gray-700">
+        <div className="store-table-wrap">
+          <table className="store-table">
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">이름</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">카테고리</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">가격</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">리소스</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">작업</th>
+                <th>이름</th>
+                <th>카테고리</th>
+                <th>가격</th>
+                <th>리소스</th>
+                <th>작업</th>
               </tr>
             </thead>
-            <tbody className="bg-gray-800 divide-y divide-gray-700">
+            <tbody>
               {menus.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-400">
+                  <td colSpan={5} className="store-empty">
                     등록된 메뉴가 없습니다.
                   </td>
                 </tr>
@@ -946,16 +958,16 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
                       ? categories.find((c) => c._id === menu.categoryId)?.name || '-'
                       : menu.categoryId.name;
                   return (
-                    <tr key={menu._id} className="hover:bg-gray-750">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{menu.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{categoryName}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{menu.price.toLocaleString()}원</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{menu.resources?.length || 0}개</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <Link href={`${menuBasePath}/menus/${menu._id}`} className="text-blue-400 hover:text-blue-300 mr-4">
+                    <tr key={menu._id}>
+                      <td className="font-medium">{menu.name}</td>
+                      <td>{categoryName}</td>
+                      <td>{menu.price.toLocaleString()}원</td>
+                      <td>{menu.resources?.length || 0}개</td>
+                      <td>
+                        <Link href={`${menuBasePath}/menus/${menu._id}`} className="store-link mr-4">
                           <FontAwesomeIcon icon={faEdit} /> 상세
                         </Link>
-                        <button onClick={() => handleDeleteMenu(menu._id)} className="text-red-400 hover:text-red-300">
+                        <button type="button" onClick={() => handleDeleteMenu(menu._id)} className="store-link store-link-danger">
                           <FontAwesomeIcon icon={faTrash} /> 삭제
                         </button>
                       </td>
@@ -967,6 +979,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
           </table>
         </div>
       </div>
+          )}
 
       {/* Store 수정 모달 */}
       {showStoreModal && (
@@ -2152,7 +2165,9 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
           </div>
         </div>
       )}
-    </div>
+        </>
+      )}
+    </StoreBackupShell>
   );
 }
 

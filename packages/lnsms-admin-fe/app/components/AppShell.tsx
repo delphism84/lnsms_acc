@@ -14,7 +14,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {isHostSite ? <HostNavBar /> : <NavBar />}
-      <div className={`min-h-screen bg-gray-900 flex ${isHostSite ? 'pt-14' : 'pt-16'}`}>
+      <div
+        className={`min-h-screen flex ${
+          isHostSite ? 'host-site-shell pt-[52px]' : 'bg-gray-900 pt-16'
+        }`}
+      >
         {!hideSidebar ? <Sidebar /> : null}
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</main>
       </div>

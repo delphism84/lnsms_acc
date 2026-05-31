@@ -1,0 +1,225 @@
+/* Store FE: backup agent SettingsView look on top of existing markup */
+
+.store-backup-theme {
+  background-color: #f2f2f7;
+  color: #1c1c1e;
+  min-height: 100%;
+}
+
+.store-backup-theme .settings-header h1 {
+  font-size: 22px;
+}
+
+.store-backup-theme .store-section-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border: none;
+}
+
+.store-backup-theme .store-section-card h2,
+.store-backup-theme .store-section-card h3 {
+  color: #1c1c1e;
+}
+
+.store-backup-theme .store-meta-label {
+  color: #8e8e93;
+}
+
+.store-backup-theme .store-meta-value {
+  color: #1c1c1e;
+  font-weight: 600;
+}
+
+.store-backup-theme .store-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid #e5e5ea;
+}
+
+.store-backup-theme .store-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.store-backup-theme .store-table thead {
+  background: #f2f2f7;
+}
+
+.store-backup-theme .store-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #636366;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e5e5ea;
+}
+
+.store-backup-theme .store-table td {
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #3c3c43;
+  border-bottom: 1px solid #e5e5ea;
+}
+
+.store-backup-theme .store-table tbody tr:hover {
+  background: #f9f9fb;
+}
+
+.store-backup-theme .store-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: #8e8e93;
+}
+
+.store-backup-theme .store-device-card {
+  background: #f2f2f7;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e5e5ea;
+}
+
+.store-backup-theme .store-link {
+  color: #007aff;
+  font-weight: 600;
+}
+
+.store-backup-theme .store-link:hover {
+  color: #0051d5;
+}
+
+.store-backup-theme .store-link-danger {
+  color: #ff3b30;
+}
+
+.store-backup-theme .store-link-danger:hover {
+  color: #d70015;
+}
+
+.store-backup-theme .store-badge-on {
+  background: #34c759;
+  color: #fff;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.store-backup-theme .store-badge-off {
+  background: #e5e5ea;
+  color: #636366;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.store-backup-theme .store-error-banner {
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.store-backup-theme .store-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.store-backup-theme .store-action-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.store-backup-theme .store-action-primary {
+  background: #007aff;
+  color: #fff;
+}
+
+.store-backup-theme .store-action-primary:hover {
+  background: #0051d5;
+}
+
+.store-backup-theme .store-action-neutral {
+  background: #f2f2f7;
+  color: #1c1c1e;
+  border: 1px solid #d1d1d6;
+}
+
+.store-backup-theme .store-action-neutral:hover {
+  background: #e5e5ea;
+}
+
+.store-backup-theme .store-action-warn {
+  background: #ff9500;
+  color: #fff;
+}
+
+.store-backup-theme .store-action-danger {
+  background: #ff3b30;
+  color: #fff;
+}
+
+.store-backup-theme .store-sync-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.store-backup-theme .store-sync-panel h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1c1c1e;
+}
+
+.store-backup-theme .store-sync-panel p {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #636366;
+}
+
+.store-backup-theme .store-sync-msg-ok {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #248a3d;
+}
+
+.store-backup-theme .store-sync-msg-err {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #ff3b30;
+}
+
+.store-backup-loading {
+  padding: 24px;
+  color: #636366;
+  background: #f2f2f7;
+  min-height: 120px;
+}
+
+.host-site-shell {
+  background: #f2f2f7;
+  min-height: 100vh;
+}
+
+.host-site-shell main {
+  background: #f2f2f7;
+}

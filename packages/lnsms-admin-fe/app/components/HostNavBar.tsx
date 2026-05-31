@@ -6,6 +6,7 @@ import { hostAuth } from '@/src/lib/hostAuth';
 import { remoteHostAuth, isOnlineMode } from '@/src/lib/remoteHostAuth';
 import { LOCAL_STORE_ID, LOCAL_USERID } from '@/src/lib/storeScopePaths';
 import RemoteLoginModal from './RemoteLoginModal';
+import '@/app/styles/store-backup-settings.css';
 
 export default function HostNavBar() {
   const params = useParams();
@@ -54,67 +55,47 @@ export default function HostNavBar() {
 
   return (
     <>
-      <div className="fixed top-0 left-0 right-0 z-50 border-b border-gray-700 bg-gray-900/95 backdrop-blur">
-        <div className="flex h-14 items-center justify-between gap-4 px-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="font-semibold text-white truncate">LNSMS Host</span>
-            <span className="text-sm text-gray-400 truncate">
-              {userid}.{storeId}
-            </span>
-          </div>
+      <div className="settings-appbar fixed top-0 left-0 right-0 z-50">
+        <div className="appbar-left">
+          <span className="appbar-title">LNSMS 매장</span>
+          <span className="appbar-active-setid">{userid}.{storeId}</span>
+          {!ready && !loginError ? <span className="appbar-active-setid">로컬 로그인…</span> : null}
+          {loginError ? <span className="appbar-active-setid" style={{ color: '#ffb4ab' }}>{loginError}</span> : null}
+        </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {!ready && !loginError ? (
-              <span className="text-xs text-gray-500">로컬 로그인…</span>
-            ) : null}
-            {loginError ? <span className="text-xs text-red-400 max-w-[12rem] truncate">{loginError}</span> : null}
+        <div className="appbar-actions">
+          <span
+            className="appbar-btn"
+            style={{
+              cursor: 'default',
+              background: online ? 'rgba(52, 199, 89, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              borderColor: online ? 'rgba(52, 199, 89, 0.5)' : 'rgba(255, 255, 255, 0.2)',
+            }}
+          >
+            {online ? '온라인' : '오프라인'}
+          </span>
 
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                online ? 'bg-emerald-900/80 text-emerald-300' : 'bg-gray-800 text-gray-400'
-              }`}
-            >
-              {online ? '온라인' : '오프라인'}
-            </span>
-
-            {remoteSession ? (
-              <>
-                <span className="hidden sm:inline text-xs text-gray-400">
-                  원격 {remoteSession.userid}.{remoteSession.storeId}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRemoteLogout}
-                  className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:text-white"
-                >
-                  원격 로그아웃
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(true)}
-                  className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:text-white"
-                >
-                  재로그인
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500"
-              >
-                로그인
+          {remoteSession ? (
+            <>
+              <span className="appbar-active-setid hidden sm:inline">
+                원격 {remoteSession.userid}.{remoteSession.storeId}
+              </span>
+              <button type="button" className="appbar-btn" onClick={handleRemoteLogout}>
+                원격 로그아웃
               </button>
-            )}
-          </div>
+              <button type="button" className="appbar-btn" onClick={() => setModalOpen(true)}>
+                재로그인
+              </button>
+            </>
+          ) : (
+            <button type="button" className="appbar-btn" onClick={() => setModalOpen(true)}>
+              로그인
+            </button>
+          )}
         </div>
       </div>
 
-      <RemoteLoginModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSuccess={refreshOnline}
-      />
+      <RemoteLoginModal open={modalOpen} onClose={() => setModalOpen(false)} onSuccess={refreshOnline} />
     </>
   );
 }
