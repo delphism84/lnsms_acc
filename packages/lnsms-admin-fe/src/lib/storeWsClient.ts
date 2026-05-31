@@ -1,5 +1,4 @@
-import { auth } from './auth';
-import { hostAuth } from './hostAuth';
+import { storeWsToken } from './storeAccess';
 import { LOCAL_STORE_ID, LOCAL_USERID } from './storeScopePaths';
 
 export type StoreChangedEvent = {
@@ -29,8 +28,8 @@ export function isLocalHostStore(userid: string, storeId: string) {
   return userid === LOCAL_USERID && storeId === LOCAL_STORE_ID;
 }
 
-function wsToken(): string | null {
-  return hostAuth.getAccessToken() || auth.getToken();
+function wsToken(userid: string, storeId: string): string | null {
+  return storeWsToken(userid, storeId);
 }
 
 class StoreWsClient {
@@ -85,7 +84,7 @@ class StoreWsClient {
   }
 
   private async ensureConnected(userid: string, storeId: string) {
-    const token = wsToken();
+    const token = wsToken(userid, storeId);
     if (!token || this.refCount === 0) return;
 
     const key = `${userid}.${storeId}`;

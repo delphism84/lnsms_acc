@@ -1,8 +1,7 @@
 import * as tus from 'tus-js-client';
 import { openDB } from 'idb';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
-import { hostAuth } from '@/src/lib/hostAuth';
-import { auth } from '@/src/lib/auth';
+import { storeAuthHeaders } from '@/src/lib/storeAccess';
 
 export type UploadPurpose = 'eqidResource' | 'menuResource';
 
@@ -85,11 +84,10 @@ function safeError(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-function authHeaders(): Record<string, string> {
-  const host = hostAuth.getAccessToken();
-  if (host) return { Authorization: `Bearer ${host}` };
-  const token = auth.getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function authHeaders(userid?: string, storeId?: string): Record<string, string> {
+  const uid = userid || 'necall';
+  const sid = storeId || 'guest';
+  return storeAuthHeaders(uid, sid);
 }
 
 function endpointBase(userid?: string, storeId?: string) {
@@ -387,7 +385,7 @@ export class UploadManager {
       endpoint: endpointBase(uid, sid),
       chunkSize: 8 * 1024 * 1024, // 8MB
       retryDelays: [0, 1000, 3000, 5000, 10000],
-      headers: authHeaders(),
+      headers: authHeaders(uid, sid),
       metadata: {
         filename: file.name,
         mimetype: file.type || 'application/octet-stream',
@@ -439,7 +437,7 @@ export class UploadManager {
         try {
           if (!tusUploadId) throw new Error('업로드 ID를 확인할 수 없습니다.');
           const res = await fetch(`${endpointBase(uid, sid)}/${encodeURIComponent(tusUploadId)}/result`, {
-            headers: authHeaders(),
+            headers: authHeaders(uid, sid),
           });
           if (!res.ok) {
             const msg = await res.text();

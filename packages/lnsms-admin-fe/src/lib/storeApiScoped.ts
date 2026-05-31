@@ -1,6 +1,5 @@
 import { storeApiBase } from './storeScopePaths';
-import { auth } from './auth';
-import { hostAuth } from './hostAuth';
+import { storeAuthHeaders } from './storeAccess';
 import type { Category, Eqid, EqidResource, Menu, MenuResource, Store } from './types';
 
 export type StoreContext = {
@@ -12,11 +11,8 @@ export type StoreContext = {
   store: Store;
 };
 
-function authHeaders(): Record<string, string> {
-  const host = hostAuth.getAccessToken();
-  if (host) return { Authorization: `Bearer ${host}` };
-  const token = auth.getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function authHeaders(userid: string, storeId: string): Record<string, string> {
+  return storeAuthHeaders(userid, storeId);
 }
 
 function base(userid: string, storeId: string) {
@@ -29,7 +25,7 @@ function base(userid: string, storeId: string) {
         ...init,
         headers: {
           'Content-Type': 'application/json',
-          ...authHeaders(),
+          ...authHeaders(userid, storeId),
           ...(init?.headers || {}),
         },
       });
@@ -47,7 +43,7 @@ function base(userid: string, storeId: string) {
     async upload<T>(path: string, formData: FormData): Promise<T> {
       const res = await fetch(`${root}${path}`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: authHeaders(userid, storeId),
         body: formData,
       });
       if (!res.ok) {
@@ -73,7 +69,7 @@ export function createStoreApi(userid: string, storeId: string) {
     updatePassword: (password: string) =>
       fetch(`/api/host/${encodeURIComponent(userid)}/${encodeURIComponent(storeId)}/password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...hostAuth.authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(userid, storeId) },
         body: JSON.stringify({ password }),
       }).then(async (res) => {
         if (!res.ok) {

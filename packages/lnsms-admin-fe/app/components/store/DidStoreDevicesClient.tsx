@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { auth } from '@/src/lib/auth';
-import { hostAuth } from '@/src/lib/hostAuth';
+import { ensureStoreAccess } from '@/src/lib/storeAccess';
 import type { Eqid, Store } from '@/src/lib/types';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
 import { useStoreEvents } from '@/src/lib/useStoreEvents';
@@ -42,8 +41,6 @@ export default function DidStoreDevicesClient({
   descriptionOverride?: string;
 }) {
   const router = useRouter();
-  const pathname = usePathname() || '';
-  const isStoreSite = pathname.startsWith('/s/');
   const scopedApi = useMemo(
     () => (agentId && storeId ? createStoreApi(agentId, storeId) : null),
     [agentId, storeId]
@@ -92,15 +89,14 @@ export default function DidStoreDevicesClient({
     let cancelled = false;
 
     (async () => {
-      if (isStoreSite) {
-        try {
-          await hostAuth.autoLoginLocal();
-        } catch {
-          if (!cancelled) setError('로컬 로그인 실패');
+      try {
+        await ensureStoreAccess(agentId, storeId);
+      } catch {
+        if (!cancelled) {
+          setError('로그인이 필요합니다');
+          router.push('/login');
+          return;
         }
-      } else if (!auth.isAuthenticated()) {
-        router.push('/login');
-        return;
       }
       if (!scopedApi && !storeRef) return;
       if (!cancelled) void load();
@@ -110,7 +106,7 @@ export default function DidStoreDevicesClient({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeRef, scopedApi, router, isStoreSite]);
+  }, [storeRef, scopedApi, router]);
 
   useStoreEvents(agentId, storeId, {
     onChanged: (evt) => {

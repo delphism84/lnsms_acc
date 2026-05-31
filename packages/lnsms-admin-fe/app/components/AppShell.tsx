@@ -9,7 +9,12 @@ import UploadQueue from './UploadQueue';
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '';
   const isHostSite = pathname.startsWith('/s/');
-  const hideSidebar = pathname === '/login' || pathname.startsWith('/platform') || isHostSite;
+  const isLogin = pathname === '/login';
+  const hideSidebar = isLogin || pathname.startsWith('/platform') || isHostSite;
+
+  if (isLogin) {
+    return <>{children}</>;
+  }
 
   return (
     <>

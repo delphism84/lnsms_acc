@@ -1,15 +1,5 @@
 import { auth } from './auth';
-
-const API_URL = (() => {
-  const explicit = (process.env.NEXT_PUBLIC_API_URL || '').trim();
-  if (explicit) return explicit.replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-    const { protocol, hostname } = window.location;
-    if (protocol === 'https:') return `${protocol}//${hostname}`;
-    return `${protocol}//${hostname}:40000`;
-  }
-  return '';
-})();
+import { getApiUrl } from './apiUrl';
 
 function authHeaders(): Record<string, string> {
   const token = auth.getToken();
@@ -17,7 +7,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function platformFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}/api/platform${path}`, {
+  const res = await fetch(`${getApiUrl()}/api/platform${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/src/lib/auth';
 import { platformApi, type PlatformStore } from '@/src/lib/platformApi';
+import { isStoreSite, platformSiteOrigin } from '@/src/lib/siteMode';
 import { storeSiteSetting } from '@/src/lib/storeScopePaths';
 
 export default function PlatformPage() {
@@ -31,6 +32,10 @@ export default function PlatformPage() {
   }, []);
 
   useEffect(() => {
+    if (isStoreSite()) {
+      window.location.replace(`${platformSiteOrigin()}/platform`);
+      return;
+    }
     if (!auth.isAuthenticated()) {
       router.push('/login');
       return;

@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { platformPath, storeSiteBase } from '@/src/lib/storeScopePaths';
 import type { Store, Category, Menu, Eqid } from '@/src/lib/types';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
-import { auth } from '@/src/lib/auth';
-import { hostAuth } from '@/src/lib/hostAuth';
+import { ensureStoreAccess } from '@/src/lib/storeAccess';
+import { isStoreSite as isStoreHostSite } from '@/src/lib/siteMode';
 import { useStoreEvents } from '@/src/lib/useStoreEvents';
 import StoreServerSyncPanel from '@/app/components/StoreServerSyncPanel';
 import StoreBackupShell, { type StoreBackupTab } from '@/app/components/store/StoreBackupShell';
@@ -30,8 +30,6 @@ import {
 
 export default function StoreDetailClient({ agentId, storeId }: { agentId: string; storeId: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const isStoreSite = pathname.startsWith('/s/');
   const scopedApi = useMemo(() => createStoreApi(agentId, storeId), [agentId, storeId]);
   const agentListHref = platformPath();
   const menuBasePath = storeSiteBase(agentId, storeId);
@@ -195,31 +193,23 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
     let cancelled = false;
 
     (async () => {
-      if (isStoreSite) {
-        try {
-          await hostAuth.autoLoginLocal();
-          if (!cancelled && agentId && storeId) await loadData();
-        } catch (error: unknown) {
-          if (!cancelled) {
-            setError(error instanceof Error ? error.message : '로컬 로그인 실패');
-            setLoading(false);
-          }
+      try {
+        await ensureStoreAccess(agentId, storeId);
+        if (!cancelled && agentId && storeId) await loadData();
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : '로그인 실패');
+          setLoading(false);
+          router.push('/login');
         }
-        return;
       }
-
-      if (!auth.isAuthenticated()) {
-        router.push('/login');
-        return;
-      }
-      if (agentId && storeId) await loadData();
     })();
 
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, storeId, isStoreSite, router]);
+  }, [agentId, storeId, router]);
 
   useStoreEvents(agentId, storeId, {
     onChanged: () => {
@@ -535,7 +525,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
     <StoreBackupShell
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      showPlatformBack={!isStoreSite}
+      showPlatformBack={!isStoreHostSite()}
       platformBackHref={agentListHref}
     >
       {(tab) => (
@@ -707,7 +697,7 @@ export default function StoreDetailClient({ agentId, storeId }: { agentId: strin
       </div>
           )}
 
-          {tab === 'sync' && <StoreServerSyncPanel onSynced={loadData} />}
+          {tab === 'sync' && <StoreServerSyncPanel userid={agentId} storeId={storeId} onSynced={loadData} />}
 
           {tab === 'device' && (
       <div className="settings-section store-section-card">

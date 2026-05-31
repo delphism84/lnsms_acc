@@ -6,7 +6,7 @@ import Link from 'next/link';
 import type { Menu } from '@/src/lib/types';
 import { createStoreApi } from '@/src/lib/storeApiScoped';
 import { storeSiteSetting } from '@/src/lib/storeScopePaths';
-import { hostAuth } from '@/src/lib/hostAuth';
+import { ensureStoreAccess } from '@/src/lib/storeAccess';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faTrash, faImages, faSpinner, faInbox } from '@fortawesome/free-solid-svg-icons';
 import { uploadManager } from '@/src/lib/uploadManager';
@@ -42,10 +42,17 @@ export default function MenuDetailClient({
   };
 
   useEffect(() => {
-    void hostAuth.autoLoginLocal().catch(() => {});
-    if (menuId) void loadMenu();
+    (async () => {
+      try {
+        await ensureStoreAccess(agentId, storeId);
+      } catch {
+        router.push('/login');
+        return;
+      }
+      if (menuId) void loadMenu();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuId, router]);
+  }, [menuId, router, agentId, storeId]);
 
   useEffect(() => {
     return uploadManager.onPostProcess((task, result) => {
