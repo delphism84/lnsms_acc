@@ -8,6 +8,7 @@ obj/
 
 # runtime data
 data/mongo/
+packages/lnvoice/deploy/mongodb/data/
 packages/lnsms-be/uploads/
 *.log
 

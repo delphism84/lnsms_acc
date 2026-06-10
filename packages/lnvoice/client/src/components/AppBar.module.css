@@ -1,0 +1,38 @@
+.bar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.logo {
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: #4f46e5;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.userId {
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.logout {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.logout:hover {
+  background: #f1f5f9;
+}

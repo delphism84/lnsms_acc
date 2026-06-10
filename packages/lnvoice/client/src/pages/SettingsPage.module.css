@@ -1,0 +1,17 @@
+.wrap {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.wrap h2 {
+  margin-top: 0;
+}
+
+.wrap p {
+  color: #64748b;
+}

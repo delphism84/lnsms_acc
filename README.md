@@ -9,6 +9,8 @@ packages/
   lnsms-be/          # Node API (Platform + Store, Mongo)
   lnsms-admin-fe/    # Next.js Admin + 매장 콘솔
   agent-host/        # CareReceiverAgent.Host (Kestrel :58000, WebView)
+  lnvoice/           # WebRTC 음성통화 + 채팅 (voice.dair.co.kr)
+  qa-bot/
 resource/            # app.json, icons
 deploy/              # docker-compose, nginx 예시
 scripts/             # 로컬 기동 스크립트
