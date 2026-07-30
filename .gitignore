@@ -9,6 +9,7 @@ obj/
 # runtime data
 data/mongo/
 packages/lnvoice/deploy/mongodb/data/
+packages/esp32-voice/tmp/
 packages/lnsms-be/uploads/
 *.log
 

@@ -1,0 +1,15 @@
+{
+  "name": "esp32-voice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CALL_PROTOCOL_V2 — multi-party voice rooms + light HTML UI + ESP32 TCP stubs",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

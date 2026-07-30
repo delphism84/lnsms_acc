@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>esp32-voice · 다자간 통화</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>esp32-voice</h1>
+      <span id="conn" class="pill off">연결 끊김</span>
+    </header>
+
+    <section class="card join-card">
+      <label>이름 <input id="name" maxlength="32" placeholder="이름" value="guest" /></label>
+      <label>방 ID <input id="room" maxlength="64" placeholder="esp1" value="esp1" /></label>
+      <button id="btnJoin" class="primary">입장</button>
+      <button id="btnLeave" class="ghost" disabled>퇴장</button>
+    </section>
+
+    <section class="card media-card">
+      <h2>마이크 · 스피커</h2>
+      <div class="row">
+        <label class="grow">마이크
+          <select id="micSelect"></select>
+        </label>
+        <button id="btnMuteMic" class="toggle" title="마이크 음소거">🎤</button>
+      </div>
+      <div class="row">
+        <label class="grow">입력 볼륨
+          <input id="micGain" type="range" min="0" max="100" value="100" />
+        </label>
+        <span id="micGainVal" class="val">100</span>
+      </div>
+      <div class="meter"><i id="micMeter"></i></div>
+
+      <div class="row">
+        <label class="grow">스피커
+          <select id="spkSelect"></select>
+        </label>
+        <button id="btnMuteSpk" class="toggle" title="스피커 음소거">🔊</button>
+      </div>
+      <div class="row">
+        <label class="grow">출력 볼륨
+          <input id="spkGain" type="range" min="0" max="100" value="100" />
+        </label>
+        <span id="spkGainVal" class="val">100</span>
+      </div>
+      <p class="hint">Chrome에서 스피커 선택이 지원됩니다. 권한 허용 후 장치를 고르세요.</p>
+    </section>
+
+    <section class="card">
+      <h2>참가자 <span id="peerCount" class="muted">0</span></h2>
+      <ul id="peers"></ul>
+      <div id="remoteAudio" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>채팅</h2>
+      <div id="chatLog"></div>
+      <form id="chatForm" class="row">
+        <input id="chatInput" class="grow" maxlength="500" placeholder="메시지" autocomplete="off" />
+        <button type="submit" class="primary">전송</button>
+      </form>
+    </section>
+
+    <footer class="muted">
+      CALL_PROTOCOL_V2 · mesh WebRTC · ESP32 TCP 9101–9104
+    </footer>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

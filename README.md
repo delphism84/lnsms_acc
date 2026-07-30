@@ -1,4 +1,4 @@
-# lnsms_acc — LNSMS monorepo
+# lnsms — LNSMS monorepo
 
 Platform(전체 매장) + Store site(단일 매장) + Agent Host(시리얼·알림)를 **한 리포**에서 운영합니다.
 
@@ -10,6 +10,7 @@ packages/
   lnsms-admin-fe/    # Next.js Admin + 매장 콘솔
   agent-host/        # CareReceiverAgent.Host (Kestrel :58000, WebView)
   lnvoice/           # WebRTC 음성통화 + 채팅 (voice.dair.co.kr)
+  esp32-voice/       # ESP32-P4 영상/음성 통화 (voice.dualmodule.com)
   qa-bot/
 resource/            # app.json, icons
 deploy/              # docker-compose, nginx 예시
